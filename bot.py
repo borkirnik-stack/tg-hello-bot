@@ -9,6 +9,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 openai_client = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
 NOTION_TOKEN = os.environ["NOTION_TOKEN"]
 NOTION_DB_ID = "8c5db127-9158-4804-a355-302ba8da33f2"
+NOTION_USER_ID = "6a8b00b8-c9e8-41c3-bcca-9ba4e2223ee9"
 NOTION_HEADERS = {
     "Authorization": f"Bearer {NOTION_TOKEN}",
     "Notion-Version": "2022-06-28",
@@ -52,6 +53,20 @@ TOOLS = [
         "function": {
             "name": "find_task",
             "description": "Найти задачу в Notion по названию и получить ссылку на неё",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Название задачи или часть названия"},
+                },
+                "required": ["title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "assign_task",
+            "description": "Назначить пользователя ответственным за задачу в Notion",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -153,6 +168,23 @@ async def notion_update_status(title_query: str, status: str) -> str:
     return "Ошибка при обновлении статуса."
 
 
+async def notion_assign_task(title_query: str) -> str:
+    tasks = await notion_get_tasks()
+    matched = [t for t in tasks if title_query.lower() in t["title"].lower()]
+    if not matched:
+        return f"Задача '{title_query}' не найдена."
+    task = matched[0]
+    async with httpx.AsyncClient() as client:
+        resp = await client.patch(
+            f"https://api.notion.com/v1/pages/{task['id']}",
+            headers=NOTION_HEADERS,
+            json={"properties": {"Ответственный": {"people": [{"id": NOTION_USER_ID}]}}},
+        )
+    if resp.status_code == 200:
+        return f"Кирилл назначен ответственным за задачу '{task['title']}'."
+    return "Ошибка при назначении ответственного."
+
+
 async def run_tool(name: str, args: dict) -> str:
     if name == "find_task":
         tasks = await notion_get_tasks()
@@ -172,6 +204,8 @@ async def run_tool(name: str, args: dict) -> str:
     elif name == "add_task":
         url = await notion_add_task(args["title"])
         return f"Задача '{args['title']}' добавлена в Notion.\n🔗 {url}" if url else "Ошибка при добавлении задачи."
+    elif name == "assign_task":
+        return await notion_assign_task(args["title"])
     elif name == "update_task_status":
         return await notion_update_status(args["title"], args["status"])
     return "Неизвестная функция."
