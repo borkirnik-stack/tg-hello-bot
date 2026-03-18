@@ -312,16 +312,16 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply = msg.content
             conversations[user_id].append({"role": "assistant", "content": reply})
 
-        await thinking_msg.edit_text(reply, reply_markup=MAIN_MENU)
+        await thinking_msg.edit_text(reply)
 
     except Exception as e:
         import traceback
         traceback.print_exc()
         try:
-            await thinking_msg.edit_text(f"Ошибка: {str(e)[:300]}", reply_markup=MAIN_MENU)
+            await thinking_msg.edit_text(f"Ошибка: {str(e)[:300]}")
         except Exception as e2:
             print(f"Failed to edit thinking_msg: {e2}")
-            await update.message.reply_text(f"Ошибка: {str(e)[:300]}", reply_markup=MAIN_MENU)
+            await update.message.reply_text(f"Ошибка: {str(e)[:300]}")
 
 
 async def add_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
