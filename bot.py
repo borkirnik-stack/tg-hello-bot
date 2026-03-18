@@ -1,6 +1,7 @@
 import os
 import base64
 import json
+import time
 import httpx
 from openai import AsyncOpenAI
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
@@ -18,6 +19,9 @@ NOTION_HEADERS = {
 
 conversations = {}
 WAITING_TASK = 1
+_tasks_cache: list = []
+_tasks_cache_time: float = 0
+CACHE_TTL = 60  # секунд
 
 MAIN_MENU = ReplyKeyboardMarkup(
     [[KeyboardButton("📋 Мои задачи"), KeyboardButton("➕ Добавить задачу")],
@@ -95,9 +99,12 @@ TOOLS = [
 
 
 async def notion_get_tasks() -> list:
+    global _tasks_cache, _tasks_cache_time
+    if _tasks_cache and time.time() - _tasks_cache_time < CACHE_TTL:
+        return _tasks_cache
     tasks = []
     cursor = None
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30) as client:
         while True:
             body = {"page_size": 100}
             if cursor:
@@ -126,6 +133,8 @@ async def notion_get_tasks() -> list:
                 cursor = data.get("next_cursor")
             else:
                 break
+    _tasks_cache = tasks
+    _tasks_cache_time = time.time()
     return tasks
 
 
