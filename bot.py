@@ -1,5 +1,6 @@
 import os
 import base64
+import json
 import httpx
 from openai import AsyncOpenAI
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
@@ -15,7 +16,6 @@ NOTION_HEADERS = {
 }
 
 conversations = {}
-
 WAITING_TASK = 1
 
 MAIN_MENU = ReplyKeyboardMarkup(
@@ -24,8 +24,48 @@ MAIN_MENU = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_tasks",
+            "description": "Получить список задач из Notion",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_task",
+            "description": "Добавить новую задачу в Notion",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Название задачи"},
+                },
+                "required": ["title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_task_status",
+            "description": "Обновить статус задачи в Notion",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Название задачи (или часть названия)"},
+                    "status": {"type": "string", "description": "Новый статус: 'Делается', 'Готово', 'Отмена'"},
+                },
+                "required": ["title", "status"],
+            },
+        },
+    },
+]
 
-async def notion_get_tasks() -> str:
+
+async def notion_get_tasks() -> list:
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"https://api.notion.com/v1/databases/{NOTION_DB_ID}/query",
@@ -38,8 +78,8 @@ async def notion_get_tasks() -> str:
         props = r.get("properties", {})
         for val in props.values():
             if val.get("type") == "title":
-                title = val.get("title", [])
-                name = title[0].get("plain_text", "").strip() if title else ""
+                title_arr = val.get("title", [])
+                name = title_arr[0].get("plain_text", "").strip() if title_arr else ""
                 if name and not name[0].isdigit():
                     status_prop = props.get("Status", props.get("Статус", {}))
                     st = ""
@@ -47,8 +87,8 @@ async def notion_get_tasks() -> str:
                         st = status_prop["status"].get("name", "")
                     elif status_prop.get("type") == "select" and status_prop.get("select"):
                         st = status_prop["select"].get("name", "")
-                    tasks.append(f"• {name}" + (f" [{st}]" if st else ""))
-    return "\n".join(tasks) if tasks else "Задач не найдено."
+                    tasks.append({"id": r["id"], "title": name, "status": st})
+    return tasks
 
 
 async def notion_add_task(title: str) -> bool:
@@ -66,11 +106,47 @@ async def notion_add_task(title: str) -> bool:
     return resp.status_code == 200
 
 
+async def notion_update_status(title_query: str, status: str) -> str:
+    tasks = await notion_get_tasks()
+    matched = [t for t in tasks if title_query.lower() in t["title"].lower()]
+    if not matched:
+        return f"Задача '{title_query}' не найдена."
+    task = matched[0]
+    async with httpx.AsyncClient() as client:
+        resp = await client.patch(
+            f"https://api.notion.com/v1/pages/{task['id']}",
+            headers=NOTION_HEADERS,
+            json={
+                "properties": {
+                    "Status": {"status": {"name": status}},
+                }
+            },
+        )
+    if resp.status_code == 200:
+        return f"Статус задачи '{task['title']}' обновлён на '{status}'."
+    return "Ошибка при обновлении статуса."
+
+
+async def run_tool(name: str, args: dict) -> str:
+    if name == "get_tasks":
+        tasks = await notion_get_tasks()
+        if not tasks:
+            return "Задач не найдено."
+        return "\n".join(f"• {t['title']}" + (f" [{t['status']}]" if t["status"] else "") for t in tasks)
+    elif name == "add_task":
+        ok = await notion_add_task(args["title"])
+        return f"Задача '{args['title']}' добавлена в Notion." if ok else "Ошибка при добавлении задачи."
+    elif name == "update_task_status":
+        return await notion_update_status(args["title"], args["status"])
+    return "Неизвестная функция."
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     conversations[user_id] = []
     await update.message.reply_text(
-        "Привет! Я умный бот. Выбери действие или просто напиши сообщение.",
+        "Привет! Я умный бот. Просто пиши что нужно — я сам разберусь.\n\n"
+        "Например: «занеси задачу купить молоко» или «покажи мои задачи»",
         reply_markup=MAIN_MENU,
     )
 
@@ -82,12 +158,12 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id not in conversations:
         conversations[user_id] = []
 
-    # Кнопки меню
     if text == "📋 Мои задачи":
         await update.message.chat.send_action("typing")
-        result = await notion_get_tasks()
+        tasks = await notion_get_tasks()
+        result = "\n".join(f"• {t['title']}" + (f" [{t['status']}]" if t["status"] else "") for t in tasks) if tasks else "Задач не найдено."
         await update.message.reply_text(f"📋 Твои задачи:\n\n{result}", reply_markup=MAIN_MENU)
-        return WAITING_TASK if False else ConversationHandler.END
+        return
 
     if text == "🔄 Сбросить чат":
         conversations[user_id] = []
@@ -96,7 +172,6 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.chat.send_action("typing")
 
-    # Обработка картинки
     if update.message.photo:
         photo = update.message.photo[-1]
         file = await context.bot.get_file(photo.file_id)
@@ -114,13 +189,47 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response = await openai_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "Ты полезный ассистент. Отвечай на русском языке. Помни весь контекст разговора."},
+            {"role": "system", "content": (
+                "Ты полезный ассистент. Отвечай на русском языке. Помни весь контекст разговора. "
+                "У тебя есть доступ к Notion пользователя — ты можешь читать задачи, добавлять новые и менять их статус. "
+                "Если пользователь просит что-то сделать с задачами — используй соответствующие функции."
+            )},
             *conversations[user_id],
         ],
+        tools=TOOLS,
+        tool_choice="auto",
     )
 
-    reply = response.choices[0].message.content
-    conversations[user_id].append({"role": "assistant", "content": reply})
+    msg = response.choices[0].message
+
+    # Если GPT хочет вызвать функцию
+    if msg.tool_calls:
+        tool_results = []
+        for tc in msg.tool_calls:
+            args = json.loads(tc.function.arguments)
+            result = await run_tool(tc.function.name, args)
+            tool_results.append({
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "content": result,
+            })
+
+        conversations[user_id].append(msg)
+        conversations[user_id].extend(tool_results)
+
+        final = await openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Ты полезный ассистент. Отвечай на русском языке."},
+                *conversations[user_id],
+            ],
+        )
+        reply = final.choices[0].message.content
+        conversations[user_id].append({"role": "assistant", "content": reply})
+    else:
+        reply = msg.content
+        conversations[user_id].append({"role": "assistant", "content": reply})
+
     await update.message.reply_text(reply, reply_markup=MAIN_MENU)
 
 
