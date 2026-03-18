@@ -207,9 +207,12 @@ async def run_tool(name: str, args: dict) -> str:
         tasks = await notion_get_tasks()
         if not tasks:
             return "Задач не найдено."
+        # Показываем только активные задачи (со статусом), либо последние 30
+        active = [t for t in tasks if t["status"] and t["status"] not in ("Отмена",)]
+        show = active[:30] if active else tasks[:30]
         db_url = f"https://notion.so/{NOTION_DB_ID.replace('-', '')}"
-        lines = [f"• {t['title']}" + (f" [{t['status']}]" if t["status"] else "") + f" — https://notion.so/{t['id'].replace('-', '')}" for t in tasks]
-        return "\n".join(lines) + f"\n\n📂 База данных: {db_url}"
+        lines = [f"• {t['title']}" + (f" [{t['status']}]" if t["status"] else "") for t in show]
+        return "\n".join(lines) + f"\n\nВсего задач: {len(tasks)}\n📂 {db_url}"
     elif name == "add_task":
         url = await notion_add_task(args["title"])
         return f"Задача '{args['title']}' добавлена в Notion.\n🔗 {url}" if url else "Ошибка при добавлении задачи."
