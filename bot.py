@@ -91,7 +91,7 @@ async def notion_get_tasks() -> list:
     return tasks
 
 
-async def notion_add_task(title: str) -> bool:
+async def notion_add_task(title: str) -> str | None:
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             "https://api.notion.com/v1/pages",
@@ -103,7 +103,10 @@ async def notion_add_task(title: str) -> bool:
                 },
             },
         )
-    return resp.status_code == 200
+    if resp.status_code == 200:
+        page_id = resp.json().get("id", "").replace("-", "")
+        return f"https://notion.so/{page_id}"
+    return None
 
 
 async def notion_update_status(title_query: str, status: str) -> str:
@@ -132,10 +135,12 @@ async def run_tool(name: str, args: dict) -> str:
         tasks = await notion_get_tasks()
         if not tasks:
             return "Задач не найдено."
-        return "\n".join(f"• {t['title']}" + (f" [{t['status']}]" if t["status"] else "") for t in tasks)
+        db_url = f"https://notion.so/{NOTION_DB_ID.replace('-', '')}"
+        lines = [f"• {t['title']}" + (f" [{t['status']}]" if t["status"] else "") + f" — https://notion.so/{t['id'].replace('-', '')}" for t in tasks]
+        return "\n".join(lines) + f"\n\n📂 База данных: {db_url}"
     elif name == "add_task":
-        ok = await notion_add_task(args["title"])
-        return f"Задача '{args['title']}' добавлена в Notion." if ok else "Ошибка при добавлении задачи."
+        url = await notion_add_task(args["title"])
+        return f"Задача '{args['title']}' добавлена в Notion.\n🔗 {url}" if url else "Ошибка при добавлении задачи."
     elif name == "update_task_status":
         return await notion_update_status(args["title"], args["status"])
     return "Неизвестная функция."
