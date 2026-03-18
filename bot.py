@@ -337,8 +337,20 @@ async def notion_get_page_content(page_id: str) -> str:
                 lines.append(f"{'✅' if checked else '☐'} {text}")
         elif btype == "divider":
             lines.append("---")
+        elif btype == "child_page":
+            title = block_data.get("title", "Без названия")
+            child_id = b["id"].replace("-", "")
+            lines.append(f"📄 {title}\n   🔗 https://notion.so/{child_id}")
+        elif btype == "child_database":
+            title = block_data.get("title", "Без названия")
+            child_id = b["id"].replace("-", "")
+            lines.append(f"🗃 {title}\n   🔗 https://notion.so/{child_id}")
+        elif btype == "link_to_page":
+            linked = block_data.get("page_id") or block_data.get("database_id", "")
+            linked_id = linked.replace("-", "")
+            lines.append(f"🔗 https://notion.so/{linked_id}")
 
-    return "\n".join(lines) if lines else "Страница не содержит текстового содержимого."
+    return "\n".join(lines) if lines else "Страница пустая."
 
 
 async def run_tool(name: str, args: dict) -> str:
