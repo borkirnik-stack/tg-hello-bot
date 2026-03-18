@@ -80,28 +80,37 @@ TOOLS = [
 
 
 async def notion_get_tasks() -> list:
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            f"https://api.notion.com/v1/databases/{NOTION_DB_ID}/query",
-            headers=NOTION_HEADERS,
-            json={"page_size": 50},
-        )
-    data = resp.json()
     tasks = []
-    for r in data.get("results", []):
-        props = r.get("properties", {})
-        for val in props.values():
-            if val.get("type") == "title":
-                title_arr = val.get("title", [])
-                name = title_arr[0].get("plain_text", "").strip() if title_arr else ""
-                if name and not name[0].isdigit():
-                    status_prop = props.get("Status", props.get("Статус", {}))
-                    st = ""
-                    if status_prop.get("type") == "status" and status_prop.get("status"):
-                        st = status_prop["status"].get("name", "")
-                    elif status_prop.get("type") == "select" and status_prop.get("select"):
-                        st = status_prop["select"].get("name", "")
-                    tasks.append({"id": r["id"], "title": name, "status": st})
+    cursor = None
+    async with httpx.AsyncClient() as client:
+        while True:
+            body = {"page_size": 100}
+            if cursor:
+                body["start_cursor"] = cursor
+            resp = await client.post(
+                f"https://api.notion.com/v1/databases/{NOTION_DB_ID}/query",
+                headers=NOTION_HEADERS,
+                json=body,
+            )
+            data = resp.json()
+            for r in data.get("results", []):
+                props = r.get("properties", {})
+                for val in props.values():
+                    if val.get("type") == "title":
+                        title_arr = val.get("title", [])
+                        name = title_arr[0].get("plain_text", "").strip() if title_arr else ""
+                        if name and not name[0].isdigit():
+                            status_prop = props.get("Status", props.get("Статус", {}))
+                            st = ""
+                            if status_prop.get("type") == "status" and status_prop.get("status"):
+                                st = status_prop["status"].get("name", "")
+                            elif status_prop.get("type") == "select" and status_prop.get("select"):
+                                st = status_prop["select"].get("name", "")
+                            tasks.append({"id": r["id"], "title": name, "status": st})
+            if data.get("has_more"):
+                cursor = data.get("next_cursor")
+            else:
+                break
     return tasks
 
 
