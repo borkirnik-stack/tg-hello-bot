@@ -315,8 +315,13 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await thinking_msg.edit_text(reply, reply_markup=MAIN_MENU)
 
     except Exception as e:
-        print(f"Error in chat: {e}")
-        await thinking_msg.edit_text(f"Ошибка: {e}", reply_markup=MAIN_MENU)
+        import traceback
+        traceback.print_exc()
+        try:
+            await thinking_msg.edit_text(f"Ошибка: {str(e)[:300]}", reply_markup=MAIN_MENU)
+        except Exception as e2:
+            print(f"Failed to edit thinking_msg: {e2}")
+            await update.message.reply_text(f"Ошибка: {str(e)[:300]}", reply_markup=MAIN_MENU)
 
 
 async def add_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
