@@ -240,7 +240,7 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("История очищена.", reply_markup=MAIN_MENU)
         return
 
-    await update.message.chat.send_action("typing")
+    thinking_msg = await update.message.reply_text("⏳")
 
     if update.message.photo:
         photo = update.message.photo[-1]
@@ -300,7 +300,7 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply = msg.content
         conversations[user_id].append({"role": "assistant", "content": reply})
 
-    await update.message.reply_text(reply, reply_markup=MAIN_MENU)
+    await thinking_msg.edit_text(reply, reply_markup=MAIN_MENU)
 
 
 async def add_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
