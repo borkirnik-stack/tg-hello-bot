@@ -95,6 +95,42 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_notion",
+            "description": "Поиск по всему Notion — страницы, базы данных, заметки. Использовать когда пользователь ищет что-то конкретное или хочет найти страницу.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Поисковый запрос"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_databases",
+            "description": "Показать все базы данных в Notion к которым есть доступ",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_page_content",
+            "description": "Прочитать содержимое конкретной страницы Notion по её ID или URL",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "page_id": {"type": "string", "description": "ID страницы Notion (из URL или из результатов поиска)"},
+                },
+                "required": ["page_id"],
+            },
+        },
+    },
 ]
 
 
@@ -194,6 +230,117 @@ async def notion_assign_task(title_query: str) -> str:
     return "Ошибка при назначении ответственного."
 
 
+async def notion_search(query: str) -> str:
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            "https://api.notion.com/v1/search",
+            headers=NOTION_HEADERS,
+            json={"query": query, "page_size": 20},
+        )
+    data = resp.json()
+    results = data.get("results", [])
+    if not results:
+        return f"Ничего не найдено по запросу '{query}'."
+    lines = []
+    for r in results:
+        obj_type = r.get("object", "")
+        title = ""
+        if obj_type == "page":
+            props = r.get("properties", {})
+            for val in props.values():
+                if val.get("type") == "title":
+                    arr = val.get("title", [])
+                    title = arr[0].get("plain_text", "").strip() if arr else ""
+                    break
+            if not title:
+                title_obj = r.get("title", [])
+                title = title_obj[0].get("plain_text", "Без названия").strip() if title_obj else "Без названия"
+            page_id = r["id"].replace("-", "")
+            lines.append(f"📄 {title}\n   🔗 https://notion.so/{page_id}")
+        elif obj_type == "database":
+            title_arr = r.get("title", [])
+            title = title_arr[0].get("plain_text", "Без названия").strip() if title_arr else "Без названия"
+            db_id = r["id"].replace("-", "")
+            lines.append(f"🗃 {title} (база данных)\n   🔗 https://notion.so/{db_id}")
+    return "\n\n".join(lines)
+
+
+async def notion_list_databases() -> str:
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            "https://api.notion.com/v1/search",
+            headers=NOTION_HEADERS,
+            json={"filter": {"value": "database", "property": "object"}, "page_size": 50},
+        )
+    data = resp.json()
+    results = data.get("results", [])
+    if not results:
+        return "Базы данных не найдены."
+    lines = []
+    for r in results:
+        title_arr = r.get("title", [])
+        title = title_arr[0].get("plain_text", "Без названия").strip() if title_arr else "Без названия"
+        db_id = r["id"].replace("-", "")
+        lines.append(f"🗃 {title}\n   🔗 https://notion.so/{db_id}")
+    return f"Базы данных в Notion ({len(lines)}):\n\n" + "\n\n".join(lines)
+
+
+async def notion_get_page_content(page_id: str) -> str:
+    # Очищаем ID от URL и дефисов
+    page_id = page_id.strip()
+    if "notion.so/" in page_id:
+        page_id = page_id.split("notion.so/")[-1].split("?")[0].split("#")[0]
+        # убираем имя пользователя если есть (slug-XXXXXXX)
+        if "-" in page_id and len(page_id.replace("-", "")) == 32:
+            page_id = page_id  # уже с дефисами
+        elif len(page_id) > 32:
+            page_id = page_id[-32:]
+    page_id = page_id.replace("-", "")
+    # Форматируем как UUID
+    if len(page_id) == 32:
+        page_id = f"{page_id[:8]}-{page_id[8:12]}-{page_id[12:16]}-{page_id[16:20]}-{page_id[20:]}"
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        # Получаем блоки страницы
+        resp = await client.get(
+            f"https://api.notion.com/v1/blocks/{page_id}/children?page_size=50",
+            headers=NOTION_HEADERS,
+        )
+    if resp.status_code != 200:
+        return f"Ошибка при чтении страницы: {resp.status_code}"
+    blocks = resp.json().get("results", [])
+    if not blocks:
+        return "Страница пустая или нет доступа к содержимому."
+
+    lines = []
+    for b in blocks:
+        btype = b.get("type", "")
+        block_data = b.get(btype, {})
+        rich = block_data.get("rich_text", [])
+        text = "".join(rt.get("plain_text", "") for rt in rich).strip()
+        if btype in ("paragraph", "quote"):
+            if text:
+                lines.append(text)
+        elif btype.startswith("heading_"):
+            if text:
+                prefix = "#" * int(btype[-1])
+                lines.append(f"{prefix} {text}")
+        elif btype == "bulleted_list_item":
+            if text:
+                lines.append(f"• {text}")
+        elif btype == "numbered_list_item":
+            if text:
+                lines.append(f"— {text}")
+        elif btype == "to_do":
+            checked = block_data.get("checked", False)
+            if text:
+                lines.append(f"{'✅' if checked else '☐'} {text}")
+        elif btype == "divider":
+            lines.append("---")
+
+    return "\n".join(lines) if lines else "Страница не содержит текстового содержимого."
+
+
 async def run_tool(name: str, args: dict) -> str:
     if name == "find_task":
         tasks = await notion_get_tasks()
@@ -220,6 +367,12 @@ async def run_tool(name: str, args: dict) -> str:
         return await notion_assign_task(args["title"])
     elif name == "update_task_status":
         return await notion_update_status(args["title"], args["status"])
+    elif name == "search_notion":
+        return await notion_search(args["query"])
+    elif name == "list_databases":
+        return await notion_list_databases()
+    elif name == "get_page_content":
+        return await notion_get_page_content(args["page_id"])
     return "Неизвестная функция."
 
 
@@ -274,8 +427,9 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             messages=[
                 {"role": "system", "content": (
                     "Ты полезный ассистент. Отвечай на русском языке. Помни весь контекст разговора. "
-                    "У тебя есть доступ к Notion пользователя — ты можешь читать задачи, добавлять новые и менять их статус. "
-                    "Если пользователь просит что-то сделать с задачами — используй соответствующие функции."
+                    "У тебя есть полный доступ к Notion пользователя: читать задачи, добавлять, менять статус, "
+                    "искать любые страницы и базы данных, читать содержимое страниц. "
+                    "Если пользователь спрашивает про Notion, его страницы, заметки, базы — используй соответствующие функции."
                 )},
                 *conversations[user_id],
             ],
