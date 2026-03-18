@@ -350,7 +350,44 @@ async def notion_get_page_content(page_id: str) -> str:
             linked_id = linked.replace("-", "")
             lines.append(f"🔗 https://notion.so/{linked_id}")
 
-    return "\n".join(lines) if lines else "Страница пустая."
+    content = "\n".join(lines) if lines else ""
+
+    # Читаем комментарии к странице
+    async with httpx.AsyncClient(timeout=30) as client:
+        cresp = await client.get(
+            f"https://api.notion.com/v1/comments?block_id={page_id}",
+            headers=NOTION_HEADERS,
+        )
+    if cresp.status_code == 200:
+        comments = cresp.json().get("results", [])
+        if comments:
+            comment_lines = ["💬 Комментарии:"]
+            for c in comments:
+                rich = c.get("rich_text", [])
+                text = "".join(rt.get("plain_text", "") for rt in rich).strip()
+                created = c.get("created_time", "")[:10]
+                author = c.get("created_by", {}).get("id", "")
+                if text:
+                    comment_lines.append(f"[{created}] {text}")
+                # Читаем ответы на комментарий
+                disc_id = c.get("discussion_id", "")
+                if disc_id:
+                    async with httpx.AsyncClient(timeout=30) as client2:
+                        dresp = await client2.get(
+                            f"https://api.notion.com/v1/comments?block_id={page_id}&discussion_id={disc_id}",
+                            headers=NOTION_HEADERS,
+                        )
+                    if dresp.status_code == 200:
+                        replies = [r for r in dresp.json().get("results", []) if r["id"] != c["id"]]
+                        for r in replies:
+                            rrich = r.get("rich_text", [])
+                            rtext = "".join(rt.get("plain_text", "") for rt in rrich).strip()
+                            rdate = r.get("created_time", "")[:10]
+                            if rtext:
+                                comment_lines.append(f"  ↳ [{rdate}] {rtext}")
+            content = (content + "\n\n" if content else "") + "\n".join(comment_lines)
+
+    return content if content else "Страница пустая."
 
 
 async def run_tool(name: str, args: dict) -> str:
