@@ -99,7 +99,7 @@ async def notion_add_task(title: str) -> bool:
             json={
                 "parent": {"database_id": NOTION_DB_ID},
                 "properties": {
-                    "Name": {"title": [{"text": {"content": title}}]},
+                    "Название": {"title": [{"text": {"content": title}}]},
                 },
             },
         )
