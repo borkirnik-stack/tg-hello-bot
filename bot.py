@@ -2,8 +2,8 @@ import os
 import base64
 import httpx
 from openai import AsyncOpenAI
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 
 openai_client = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
 NOTION_TOKEN = os.environ["NOTION_TOKEN"]
@@ -15,6 +15,14 @@ NOTION_HEADERS = {
 }
 
 conversations = {}
+
+WAITING_TASK = 1
+
+MAIN_MENU = ReplyKeyboardMarkup(
+    [[KeyboardButton("📋 Мои задачи"), KeyboardButton("➕ Добавить задачу")],
+     [KeyboardButton("🔄 Сбросить чат")]],
+    resize_keyboard=True,
+)
 
 
 async def notion_get_tasks() -> str:
@@ -58,44 +66,37 @@ async def notion_add_task(title: str) -> bool:
     return resp.status_code == 200
 
 
-async def tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.chat.send_action("typing")
-    text = await notion_get_tasks()
-    await update.message.reply_text(f"📋 Твои задачи:\n\n{text}")
-
-
-async def add_task_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    title = " ".join(context.args)
-    if not title:
-        await update.message.reply_text("Напиши задачу: /add Купить молоко")
-        return
-    ok = await notion_add_task(title)
-    if ok:
-        await update.message.reply_text(f"✅ Задача добавлена: {title}")
-    else:
-        await update.message.reply_text("Ошибка при добавлении задачи.")
-
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     conversations[user_id] = []
     await update.message.reply_text(
-        "Привет! Я умный бот на основе ChatGPT.\n\n"
-        "🤖 Отвечаю на вопросы, помню разговор, читаю картинки\n"
-        "📋 /tasks — показать задачи из Notion\n"
-        "➕ /add <задача> — добавить задачу в Notion\n"
-        "🔄 /reset — сбросить историю чата"
+        "Привет! Я умный бот. Выбери действие или просто напиши сообщение.",
+        reply_markup=MAIN_MENU,
     )
 
 
 async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    text = update.message.text if update.message.text else ""
 
     if user_id not in conversations:
         conversations[user_id] = []
 
+    # Кнопки меню
+    if text == "📋 Мои задачи":
+        await update.message.chat.send_action("typing")
+        result = await notion_get_tasks()
+        await update.message.reply_text(f"📋 Твои задачи:\n\n{result}", reply_markup=MAIN_MENU)
+        return WAITING_TASK if False else ConversationHandler.END
+
+    if text == "🔄 Сбросить чат":
+        conversations[user_id] = []
+        await update.message.reply_text("История очищена.", reply_markup=MAIN_MENU)
+        return
+
     await update.message.chat.send_action("typing")
 
+    # Обработка картинки
     if update.message.photo:
         photo = update.message.photo[-1]
         file = await context.bot.get_file(photo.file_id)
@@ -108,8 +109,7 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         conversations[user_id].append({"role": "user", "content": content})
     else:
-        user_message = update.message.text
-        conversations[user_id].append({"role": "user", "content": user_message})
+        conversations[user_id].append({"role": "user", "content": text})
 
     response = await openai_client.chat.completions.create(
         model="gpt-4o-mini",
@@ -121,23 +121,43 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     reply = response.choices[0].message.content
     conversations[user_id].append({"role": "assistant", "content": reply})
-    await update.message.reply_text(reply)
+    await update.message.reply_text(reply, reply_markup=MAIN_MENU)
 
 
-async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    conversations[user_id] = []
-    await update.message.reply_text("История очищена. Начнём заново!")
+async def add_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Напиши задачу, которую добавить в Notion:")
+    return WAITING_TASK
+
+
+async def add_task_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    title = update.message.text.strip()
+    ok = await notion_add_task(title)
+    if ok:
+        await update.message.reply_text(f"✅ Задача добавлена: {title}", reply_markup=MAIN_MENU)
+    else:
+        await update.message.reply_text("Ошибка при добавлении.", reply_markup=MAIN_MENU)
+    return ConversationHandler.END
+
+
+async def add_task_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Отмена.", reply_markup=MAIN_MENU)
+    return ConversationHandler.END
 
 
 def main():
     token = os.environ["BOT_TOKEN"]
     app = ApplicationBuilder().token(token).build()
 
+    add_task_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^➕ Добавить задачу$"), add_task_start)],
+        states={
+            WAITING_TASK: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_task_save)],
+        },
+        fallbacks=[CommandHandler("cancel", add_task_cancel)],
+    )
+
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("reset", reset))
-    app.add_handler(CommandHandler("tasks", tasks_command))
-    app.add_handler(CommandHandler("add", add_task_command))
+    app.add_handler(add_task_conv)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
     app.add_handler(MessageHandler(filters.PHOTO, chat))
 
