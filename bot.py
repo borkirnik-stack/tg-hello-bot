@@ -339,9 +339,15 @@ async def add_task_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
+async def preload_cache(app):
+    print("Preloading Notion tasks cache...")
+    await notion_get_tasks()
+    print(f"Cache loaded: {len(_tasks_cache)} tasks")
+
+
 def main():
     token = os.environ["BOT_TOKEN"]
-    app = ApplicationBuilder().token(token).build()
+    app = ApplicationBuilder().token(token).post_init(preload_cache).build()
 
     add_task_conv = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^➕ Добавить задачу$"), add_task_start)],
