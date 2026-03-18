@@ -251,65 +251,69 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     thinking_msg = await update.message.reply_text("⏳")
 
-    if update.message.photo:
-        photo = update.message.photo[-1]
-        file = await context.bot.get_file(photo.file_id)
-        file_bytes = await file.download_as_bytearray()
-        image_b64 = base64.b64encode(file_bytes).decode("utf-8")
-        caption = update.message.caption or "Что на этой картинке?"
-        content = [
-            {"type": "text", "text": caption},
-            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
-        ]
-        conversations[user_id].append({"role": "user", "content": content})
-    else:
-        conversations[user_id].append({"role": "user", "content": text})
+    try:
+        if update.message.photo:
+            photo = update.message.photo[-1]
+            file = await context.bot.get_file(photo.file_id)
+            file_bytes = await file.download_as_bytearray()
+            image_b64 = base64.b64encode(file_bytes).decode("utf-8")
+            caption = update.message.caption or "Что на этой картинке?"
+            content = [
+                {"type": "text", "text": caption},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+            ]
+            conversations[user_id].append({"role": "user", "content": content})
+        else:
+            conversations[user_id].append({"role": "user", "content": text})
 
-    response = await openai_client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": (
-                "Ты полезный ассистент. Отвечай на русском языке. Помни весь контекст разговора. "
-                "У тебя есть доступ к Notion пользователя — ты можешь читать задачи, добавлять новые и менять их статус. "
-                "Если пользователь просит что-то сделать с задачами — используй соответствующие функции."
-            )},
-            *conversations[user_id],
-        ],
-        tools=TOOLS,
-        tool_choice="auto",
-    )
-
-    msg = response.choices[0].message
-
-    # Если GPT хочет вызвать функцию
-    if msg.tool_calls:
-        tool_results = []
-        for tc in msg.tool_calls:
-            args = json.loads(tc.function.arguments)
-            result = await run_tool(tc.function.name, args)
-            tool_results.append({
-                "role": "tool",
-                "tool_call_id": tc.id,
-                "content": result,
-            })
-
-        conversations[user_id].append(msg)
-        conversations[user_id].extend(tool_results)
-
-        final = await openai_client.chat.completions.create(
+        response = await openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "Ты полезный ассистент. Отвечай на русском языке."},
+                {"role": "system", "content": (
+                    "Ты полезный ассистент. Отвечай на русском языке. Помни весь контекст разговора. "
+                    "У тебя есть доступ к Notion пользователя — ты можешь читать задачи, добавлять новые и менять их статус. "
+                    "Если пользователь просит что-то сделать с задачами — используй соответствующие функции."
+                )},
                 *conversations[user_id],
             ],
+            tools=TOOLS,
+            tool_choice="auto",
         )
-        reply = final.choices[0].message.content
-        conversations[user_id].append({"role": "assistant", "content": reply})
-    else:
-        reply = msg.content
-        conversations[user_id].append({"role": "assistant", "content": reply})
 
-    await thinking_msg.edit_text(reply, reply_markup=MAIN_MENU)
+        msg = response.choices[0].message
+
+        if msg.tool_calls:
+            tool_results = []
+            for tc in msg.tool_calls:
+                args = json.loads(tc.function.arguments)
+                result = await run_tool(tc.function.name, args)
+                tool_results.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": result,
+                })
+
+            conversations[user_id].append(msg)
+            conversations[user_id].extend(tool_results)
+
+            final = await openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "Ты полезный ассистент. Отвечай на русском языке."},
+                    *conversations[user_id],
+                ],
+            )
+            reply = final.choices[0].message.content
+            conversations[user_id].append({"role": "assistant", "content": reply})
+        else:
+            reply = msg.content
+            conversations[user_id].append({"role": "assistant", "content": reply})
+
+        await thinking_msg.edit_text(reply, reply_markup=MAIN_MENU)
+
+    except Exception as e:
+        print(f"Error in chat: {e}")
+        await thinking_msg.edit_text(f"Ошибка: {e}", reply_markup=MAIN_MENU)
 
 
 async def add_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
