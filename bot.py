@@ -50,6 +50,20 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "find_task",
+            "description": "Найти задачу в Notion по названию и получить ссылку на неё",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Название задачи или часть названия"},
+                },
+                "required": ["title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "update_task_status",
             "description": "Обновить статус задачи в Notion",
             "parameters": {
@@ -131,6 +145,14 @@ async def notion_update_status(title_query: str, status: str) -> str:
 
 
 async def run_tool(name: str, args: dict) -> str:
+    if name == "find_task":
+        tasks = await notion_get_tasks()
+        query = args["title"].lower()
+        matched = [t for t in tasks if query in t["title"].lower()]
+        if not matched:
+            return f"Задача '{args['title']}' не найдена в Notion."
+        lines = [f"• {t['title']}" + (f" [{t['status']}]" if t["status"] else "") + f"\n  🔗 https://notion.so/{t['id'].replace('-', '')}" for t in matched]
+        return "\n".join(lines)
     if name == "get_tasks":
         tasks = await notion_get_tasks()
         if not tasks:
