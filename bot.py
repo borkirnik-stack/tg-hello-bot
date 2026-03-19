@@ -43,9 +43,10 @@ async def neurolina_chat(request: Request):
     return {"reply": response.choices[0].message.content}
 
 openai_client = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
-NOTION_TOKEN = os.environ["NOTION_TOKEN"]
+NOTION_TOKEN = os.environ["NOTION_TOKEN"].strip()
 NOTION_DB_ID = "8c5db127-9158-4804-a355-302ba8da33f2"
 PROJECTS_DB_ID = "f76d34df-10da-433d-ab12-68b9d8624d07"
+CONTACTS_DB_ID = "a3bae139-85f1-4cae-a502-4c0f8374a68c"
 NOTION_ROOT_PAGE_ID = "f273c3c162c24d72922a5fa8251a8303"
 NOTION_USER_ID = "6a8b00b8-c9e8-41c3-bcca-9ba4e2223ee9"
 NOTION_HEADERS = {
@@ -225,6 +226,27 @@ TOOLS = [
                     "start_date": {"type": "string", "description": "Дата старта работы в формате YYYY-MM-DD"},
                     "deadline": {"type": "string", "description": "Дедлайн подачи в формате YYYY-MM-DD"},
                     "notes": {"type": "string", "description": "Доп. информация по проекту"},
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_contact",
+            "description": "Занести новый контакт в базу контактов CRM. Использовать когда пользователь говорит 'занеси контакт', 'добавь контакт', 'занеси в контакты', 'добавь в crm'. Извлекай данные из текста или изображения.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Полное имя и фамилия контакта"},
+                    "company": {"type": "string", "description": "Компания"},
+                    "position": {"type": "string", "description": "Должность"},
+                    "telegram": {"type": "string", "description": "Телеграм (@username)"},
+                    "email": {"type": "string", "description": "Email"},
+                    "phone": {"type": "string", "description": "Телефон"},
+                    "comment": {"type": "string", "description": "Комментарий / заметка"},
+                    "status": {"type": "string", "description": "Статус: 'Холодный', 'Теплый', 'В работе', 'Клиент' и др. По умолчанию не ставить."},
                 },
                 "required": ["name"],
             },
@@ -514,6 +536,37 @@ async def notion_get_page_content(page_id: str) -> str:
     return content if content else "Страница пустая."
 
 
+async def notion_create_contact(args: dict) -> str:
+    props = {
+        "Полное Имя Фамилия / Компания": {"title": [{"text": {"content": args["name"]}}]},
+    }
+    if args.get("company"):
+        props["Название компании"] = {"rich_text": [{"text": {"content": args["company"]}}]}
+    if args.get("position"):
+        props["Должность"] = {"rich_text": [{"text": {"content": args["position"]}}]}
+    if args.get("telegram"):
+        props["Телеграм"] = {"rich_text": [{"text": {"content": args["telegram"]}}]}
+    if args.get("email"):
+        props["Email"] = {"rich_text": [{"text": {"content": args["email"]}}]}
+    if args.get("phone"):
+        props["Телефон"] = {"rich_text": [{"text": {"content": args["phone"]}}]}
+    if args.get("comment"):
+        props["Комментарий (для бота)"] = {"rich_text": [{"text": {"content": args["comment"]}}]}
+    if args.get("status"):
+        props["Статус"] = {"status": {"name": args["status"]}}
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            "https://api.notion.com/v1/pages",
+            headers=NOTION_HEADERS,
+            json={"parent": {"database_id": CONTACTS_DB_ID}, "properties": props},
+        )
+    if resp.status_code == 200:
+        page_id = resp.json().get("id", "").replace("-", "")
+        return f"✅ Контакт «{args['name']}» добавлен в CRM.\n🔗 https://notion.so/{page_id}"
+    return f"Ошибка при создании контакта: {resp.status_code} {resp.text[:200]}"
+
+
 async def notion_create_project(args: dict) -> str:
     props = {
         "Проекты": {"title": [{"text": {"content": args["name"]}}]},
@@ -580,6 +633,8 @@ async def run_tool(name: str, args: dict) -> str:
         return await notion_get_page_content(args["page_id"])
     elif name == "create_project":
         return await notion_create_project(args)
+    elif name == "create_contact":
+        return await notion_create_contact(args)
     return "Неизвестная функция."
 
 
