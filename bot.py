@@ -456,26 +456,18 @@ async def notion_get_page_content(page_id: str) -> str:
                 linked = bd.get("page_id") or bd.get("database_id", "")
                 linked_id = linked.replace("-", "")
                 result.append(indent + f"🔗 https://notion.so/{linked_id}")
-            elif btype in ("column_list", "column"):
-                # Раскрываем колонки рекурсивно
-                async with httpx.AsyncClient(timeout=15) as c2:
-                    r2 = await c2.get(
-                        f"https://api.notion.com/v1/blocks/{b['id']}/children?page_size=50",
-                        headers=NOTION_HEADERS,
-                    )
-                if r2.status_code == 200:
-                    inner = r2.json().get("results", [])
-                    result.extend(await parse_blocks(inner, indent))
-            elif btype == "synced_block":
-                # Синхронизированный блок — читаем детей
-                async with httpx.AsyncClient(timeout=15) as c2:
-                    r2 = await c2.get(
-                        f"https://api.notion.com/v1/blocks/{b['id']}/children?page_size=50",
-                        headers=NOTION_HEADERS,
-                    )
-                if r2.status_code == 200:
-                    inner = r2.json().get("results", [])
-                    result.extend(await parse_blocks(inner, indent))
+            elif btype in ("column_list", "column", "synced_block"):
+                try:
+                    async with httpx.AsyncClient(timeout=10) as c2:
+                        r2 = await c2.get(
+                            f"https://api.notion.com/v1/blocks/{b['id']}/children?page_size=50",
+                            headers=NOTION_HEADERS,
+                        )
+                    if r2.status_code == 200:
+                        inner = r2.json().get("results", [])
+                        result.extend(await parse_blocks(inner, indent))
+                except Exception:
+                    pass  # недоступный блок — пропускаем
             elif btype == "table":
                 result.append(indent + "[таблица]")
         return result
