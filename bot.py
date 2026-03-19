@@ -48,6 +48,7 @@ NOTION_DB_ID = "8c5db127-9158-4804-a355-302ba8da33f2"
 PROJECTS_DB_ID = "f76d34df-10da-433d-ab12-68b9d8624d07"
 CONTACTS_DB_ID = "a3bae139-85f1-4cae-a502-4c0f8374a68c"
 CONTRACTORS_DB_ID = "a614d693-5a43-4d90-8d3f-f3c472342053"
+PORTFOLIO_DB_ID = "f0a12f32-45e4-44b6-9d7e-6c8f59abd423"
 NOTION_ROOT_PAGE_ID = "f273c3c162c24d72922a5fa8251a8303"
 NOTION_USER_ID = "6a8b00b8-c9e8-41c3-bcca-9ba4e2223ee9"
 NOTION_HEADERS = {
@@ -100,12 +101,17 @@ def _detect_tool_choice(text: str):
     """Форсирует вызов tool если в тексте явно просят создать проект/контакт/подрядчика."""
     tl = text.lower()
     has_create = any(kw in tl for kw in CREATE_KEYWORDS)
+    if has_create and ("портфолио" in tl or "портфоли" in tl):
+        return {"type": "function", "function": {"name": "create_portfolio"}}
     if has_create and ("подряд" in tl or "исполнител" in tl):
         return {"type": "function", "function": {"name": "create_contractor"}}
     if has_create and ("проект" in tl or "преокт" in tl):
         return {"type": "function", "function": {"name": "create_project"}}
     if has_create and ("контакт" in tl or "crm" in tl or "срм" in tl):
         return {"type": "function", "function": {"name": "create_contact"}}
+    # Если спрашивают про статусы/данные из базы проектов
+    if "проект" in tl and any(w in tl for w in ("статус", "что в ", "какие ", "покажи", "список")):
+        return {"type": "function", "function": {"name": "query_database"}}
     return "auto"
 
 conversations = {}
@@ -286,6 +292,45 @@ TOOLS = [
                     "phone": {"type": "string", "description": "Телефон"},
                     "comment": {"type": "string", "description": "Комментарий / заметка"},
                     "status": {"type": "string", "description": "Статус: 'Холодный', 'Теплый', 'В работе', 'Клиент' и др. По умолчанию не ставить."},
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_database",
+            "description": "Запросить данные из базы данных Notion (проекты, контакты, подрядчики). Использовать когда пользователь спрашивает 'что в проектах', 'покажи проекты', 'какие статусы', 'список подрядчиков' и т.п.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "database": {"type": "string", "description": "Какую базу запросить: 'projects' (проекты), 'contacts' (контакты/CRM), 'contractors' (подрядчики), 'portfolio' (портфолио)"},
+                    "filter_status": {"type": "string", "description": "Фильтр по статусу (опционально). Например 'В процессе', 'Лиды / брифинг'"},
+                },
+                "required": ["database"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_portfolio",
+            "description": "Добавить работу в портфолио KINEMOTOR. Использовать когда пользователь говорит 'добавь в портфолио', 'занеси в портфолио'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Название работы/проекта"},
+                    "project_type": {"type": "array", "items": {"type": "string"}, "description": "Тип проекта: 'Рекламный ролик', 'Корпоративный фильм', 'Music Video', 'Моушн-графика', 'Документальный', 'Имиджевый ролик', 'Социальная реклама' и др."},
+                    "subtype": {"type": "array", "items": {"type": "string"}, "description": "Подвид проекта (если есть)"},
+                    "director": {"type": "array", "items": {"type": "string"}, "description": "Режиссёр/Арт-директор"},
+                    "producers": {"type": "array", "items": {"type": "string"}, "description": "Продюсеры: 'Борисов', 'Забирова', 'Зотов', 'Капитонов' и др."},
+                    "agency": {"type": "array", "items": {"type": "string"}, "description": "Агентство (если есть)"},
+                    "year": {"type": "array", "items": {"type": "string"}, "description": "Год: '2024', '2025', '2026' и др."},
+                    "budget": {"type": "number", "description": "Бюджет факт в рублях"},
+                    "project_url": {"type": "string", "description": "Ссылка на проект (внутренняя)"},
+                    "site_url": {"type": "string", "description": "Ссылка на сайт/YouTube"},
+                    "comment": {"type": "string", "description": "Комментарий"},
                 },
                 "required": ["name"],
             },
@@ -743,6 +788,112 @@ async def notion_create_contractor(args: dict) -> str:
     return f"Ошибка при создании подрядчика: {resp.status_code} {resp.text[:300]}"
 
 
+async def notion_create_portfolio(args: dict) -> str:
+    props = {
+        "Название": {"title": [{"text": {"content": args["name"]}}]},
+    }
+    if args.get("project_type"):
+        props["Тип проекта"] = {"multi_select": [{"name": t} for t in args["project_type"]]}
+    if args.get("subtype"):
+        props["Подвид проекта"] = {"multi_select": [{"name": s} for s in args["subtype"]]}
+    if args.get("director"):
+        props[" Режиссёр/Арт-директор"] = {"multi_select": [{"name": d} for d in args["director"]]}
+    if args.get("producers"):
+        props["Продюсеры"] = {"multi_select": [{"name": p} for p in args["producers"]]}
+    if args.get("agency"):
+        props["Агентство"] = {"multi_select": [{"name": a} for a in args["agency"]]}
+    if args.get("year"):
+        props[" Год"] = {"multi_select": [{"name": y} for y in args["year"]]}
+    if args.get("budget"):
+        props[" Бюджет факт, руб."] = {"number": args["budget"]}
+    if args.get("project_url"):
+        props["Ссылка на проект "] = {"url": args["project_url"]}
+    if args.get("site_url"):
+        props[" Ссылка на сайт/YouTube"] = {"url": args["site_url"]}
+    if args.get("comment"):
+        props["Комментарий"] = {"rich_text": [{"text": {"content": args["comment"]}}]}
+
+    from datetime import datetime
+    now = datetime.now().strftime("%d.%m.%Y %H:%M")
+    children = [
+        {
+            "object": "block",
+            "type": "callout",
+            "callout": {
+                "icon": {"emoji": "🤖"},
+                "rich_text": [{"text": {"content": f"Создано через бот · {now}"}}],
+            },
+        }
+    ]
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            "https://api.notion.com/v1/pages",
+            headers=NOTION_HEADERS,
+            json={"parent": {"database_id": PORTFOLIO_DB_ID}, "properties": props, "children": children},
+        )
+    if resp.status_code == 200:
+        page_id = resp.json().get("id", "").replace("-", "")
+        return f"✅ Работа «{args['name']}» добавлена в портфолио.\n🔗 https://notion.so/{page_id}"
+    print(f"[CREATE_PORTFOLIO ERROR] {resp.status_code}: {resp.text[:500]}")
+    return f"Ошибка при добавлении в портфолио: {resp.status_code} {resp.text[:300]}"
+
+
+async def notion_query_database(args: dict) -> str:
+    db_map = {
+        "projects": PROJECTS_DB_ID,
+        "contacts": CONTACTS_DB_ID,
+        "contractors": CONTRACTORS_DB_ID,
+        "portfolio": PORTFOLIO_DB_ID,
+    }
+    db_id = db_map.get(args.get("database", ""), PROJECTS_DB_ID)
+    body = {"page_size": 30}
+    filter_status = args.get("filter_status")
+    if filter_status:
+        body["filter"] = {"property": "Статус", "status": {"equals": filter_status}}
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"https://api.notion.com/v1/databases/{db_id}/query",
+            headers=NOTION_HEADERS,
+            json=body,
+        )
+    if resp.status_code != 200:
+        return f"Ошибка при запросе базы: {resp.status_code} {resp.text[:200]}"
+    data = resp.json()
+    results = data.get("results", [])
+    if not results:
+        return "Записей не найдено."
+    lines = []
+    for r in results:
+        props = r.get("properties", {})
+        # Извлекаем title
+        title = ""
+        for val in props.values():
+            if val.get("type") == "title":
+                arr = val.get("title", [])
+                title = arr[0].get("plain_text", "").strip() if arr else ""
+                break
+        if not title:
+            continue
+        # Статус
+        status = ""
+        for key in ("Статус", "Status"):
+            sp = props.get(key, {})
+            if sp.get("type") == "status" and sp.get("status"):
+                status = sp["status"].get("name", "")
+            elif sp.get("type") == "select" and sp.get("select"):
+                status = sp["select"].get("name", "")
+        page_id = r["id"].replace("-", "")
+        line = f"• {title}"
+        if status:
+            line += f" [{status}]"
+        line += f"\n  🔗 https://notion.so/{page_id}"
+        lines.append(line)
+    total = data.get("total", len(results))
+    return "\n".join(lines) + f"\n\nПоказано: {len(lines)}"
+
+
 async def run_tool(name: str, args: dict) -> str:
     if name == "find_task":
         tasks = await notion_get_tasks()
@@ -781,10 +932,14 @@ async def run_tool(name: str, args: dict) -> str:
         return await notion_create_contact(args)
     elif name == "create_contractor":
         return await notion_create_contractor(args)
+    elif name == "query_database":
+        return await notion_query_database(args)
+    elif name == "create_portfolio":
+        return await notion_create_portfolio(args)
     return "Неизвестная функция."
 
 
-BOT_VERSION = "v9"
+BOT_VERSION = "v10"
 
 
 async def chatid_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -965,6 +1120,8 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "ТЫ ОБЯЗАН вызвать create_contact.\n"
                     "Если пользователь говорит 'занеси', 'добавь' + 'подрядчик/подрядчиков/исполнитель' — "
                     "ТЫ ОБЯЗАН вызвать create_contractor. Подрядчики — это ОТДЕЛЬНАЯ база от CRM/контактов!\n"
+                    "Если пользователь говорит 'занеси', 'добавь' + 'портфолио' — "
+                    "ТЫ ОБЯЗАН вызвать create_portfolio.\n"
                     "НИКОГДА не отвечай 'не могу создать' — у тебя ЕСТЬ инструменты для этого!\n"
                     "Бери данные из ВСЕЙ истории переписки, не спрашивай то что уже есть в сообщениях.\n\n"
                     "При создании контактов: ВНИМАТЕЛЬНО смотри на скриншот/изображение и извлекай ВСЕ данные: "
