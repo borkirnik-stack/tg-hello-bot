@@ -47,6 +47,7 @@ NOTION_TOKEN = os.environ["NOTION_TOKEN"].strip()
 NOTION_DB_ID = "8c5db127-9158-4804-a355-302ba8da33f2"
 PROJECTS_DB_ID = "f76d34df-10da-433d-ab12-68b9d8624d07"
 CONTACTS_DB_ID = "a3bae139-85f1-4cae-a502-4c0f8374a68c"
+CONTRACTORS_DB_ID = "a614d693-5a43-4d90-8d3f-f3c472342053"
 NOTION_ROOT_PAGE_ID = "f273c3c162c24d72922a5fa8251a8303"
 NOTION_USER_ID = "6a8b00b8-c9e8-41c3-bcca-9ba4e2223ee9"
 NOTION_HEADERS = {
@@ -96,9 +97,11 @@ def detect_notion_section(text: str) -> str | None:
     return None
 
 def _detect_tool_choice(text: str):
-    """Форсирует вызов tool если в тексте явно просят создать проект/контакт."""
+    """Форсирует вызов tool если в тексте явно просят создать проект/контакт/подрядчика."""
     tl = text.lower()
     has_create = any(kw in tl for kw in CREATE_KEYWORDS)
+    if has_create and ("подряд" in tl or "исполнител" in tl):
+        return {"type": "function", "function": {"name": "create_contractor"}}
     if has_create and ("проект" in tl or "преокт" in tl):
         return {"type": "function", "function": {"name": "create_project"}}
     if has_create and ("контакт" in tl or "crm" in tl or "срм" in tl):
@@ -283,6 +286,31 @@ TOOLS = [
                     "phone": {"type": "string", "description": "Телефон"},
                     "comment": {"type": "string", "description": "Комментарий / заметка"},
                     "status": {"type": "string", "description": "Статус: 'Холодный', 'Теплый', 'В работе', 'Клиент' и др. По умолчанию не ставить."},
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_contractor",
+            "description": "Занести нового подрядчика/исполнителя в базу подрядчиков. Использовать когда пользователь говорит 'занеси подрядчика', 'добавь исполнителя', 'занеси в подрядчиков'. НЕ путать с контактами/CRM — подрядчики это отдельная база.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Имя (краткое). НА РУССКОМ ЯЗЫКЕ."},
+                    "full_name": {"type": "string", "description": "ФИО полное на русском"},
+                    "activity": {"type": "array", "items": {"type": "string"}, "description": "Вид деятельности: 'Оператор', 'Режиссёр', 'Монтажёр', 'Колорист', 'Саунд-дизайнер', 'Продюсер', 'Актёр', 'Голос', 'Гафер', 'Фотограф', 'Художник', 'Стилист', 'Визажист', 'Ассистент', 'Координатор', 'Аниматор', 'Моушн-дизайнер', 'Графический дизайнер', 'Программист' и др."},
+                    "city": {"type": "array", "items": {"type": "string"}, "description": "Город/Страна: 'Москва', 'Санкт-Петербург' и др."},
+                    "telegram": {"type": "string", "description": "Телеграм (@username или ссылка)"},
+                    "phone": {"type": "string", "description": "Телефон"},
+                    "email": {"type": "string", "description": "E-mail"},
+                    "portfolio": {"type": "string", "description": "Ссылка на портфолио/шоурил"},
+                    "rate": {"type": "string", "description": "Ставка (например '50000 руб/смена')"},
+                    "comment": {"type": "string", "description": "Комментарий"},
+                    "department": {"type": "string", "description": "Отдел: 'Продакшн', 'Пост-продакшн' и др."},
+                    "priority": {"type": "string", "description": "Приоритет: 'Высокий', 'Средний', 'Низкий'"},
                 },
                 "required": ["name"],
             },
@@ -662,6 +690,59 @@ async def notion_create_project(args: dict) -> str:
     return f"Ошибка при создании проекта: {resp.status_code} {resp.text[:300]}"
 
 
+async def notion_create_contractor(args: dict) -> str:
+    props = {
+        "Имя": {"title": [{"text": {"content": args["name"]}}]},
+    }
+    if args.get("full_name"):
+        props["ФИО полное"] = {"rich_text": [{"text": {"content": args["full_name"]}}]}
+    if args.get("activity"):
+        props["Вид деятельности "] = {"multi_select": [{"name": a} for a in args["activity"]]}
+    if args.get("city"):
+        props["Город/Страна"] = {"multi_select": [{"name": c} for c in args["city"]]}
+    if args.get("telegram"):
+        props["Telegram"] = {"rich_text": [{"text": {"content": args["telegram"]}}]}
+    if args.get("phone"):
+        props["Телефон"] = {"rich_text": [{"text": {"content": args["phone"]}}]}
+    if args.get("email"):
+        props["E-mail"] = {"rich_text": [{"text": {"content": args["email"]}}]}
+    if args.get("portfolio"):
+        props["Портфолио"] = {"rich_text": [{"text": {"content": args["portfolio"]}}]}
+    if args.get("rate"):
+        props["Ставка"] = {"rich_text": [{"text": {"content": args["rate"]}}]}
+    if args.get("comment"):
+        props["Комментарий"] = {"rich_text": [{"text": {"content": args["comment"]}}]}
+    if args.get("department"):
+        props["Отдел"] = {"select": {"name": args["department"]}}
+    if args.get("priority"):
+        props["Приоритет"] = {"select": {"name": args["priority"]}}
+
+    from datetime import datetime
+    now = datetime.now().strftime("%d.%m.%Y %H:%M")
+    children = [
+        {
+            "object": "block",
+            "type": "callout",
+            "callout": {
+                "icon": {"emoji": "🤖"},
+                "rich_text": [{"text": {"content": f"Создано через бот · {now}"}}],
+            },
+        }
+    ]
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            "https://api.notion.com/v1/pages",
+            headers=NOTION_HEADERS,
+            json={"parent": {"database_id": CONTRACTORS_DB_ID}, "properties": props, "children": children},
+        )
+    if resp.status_code == 200:
+        page_id = resp.json().get("id", "").replace("-", "")
+        return f"✅ Подрядчик «{args['name']}» добавлен в базу.\n🔗 https://notion.so/{page_id}"
+    print(f"[CREATE_CONTRACTOR ERROR] {resp.status_code}: {resp.text[:500]}")
+    return f"Ошибка при создании подрядчика: {resp.status_code} {resp.text[:300]}"
+
+
 async def run_tool(name: str, args: dict) -> str:
     if name == "find_task":
         tasks = await notion_get_tasks()
@@ -698,6 +779,8 @@ async def run_tool(name: str, args: dict) -> str:
         return await notion_create_project(args)
     elif name == "create_contact":
         return await notion_create_contact(args)
+    elif name == "create_contractor":
+        return await notion_create_contractor(args)
     return "Неизвестная функция."
 
 
@@ -862,6 +945,7 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "- CRM: 71a73c06-4a49-451d-abca-fe3e34078227\n"
                     "- Проекты КМ (страница): 4dd52333-9829-4f10-8fb4-14d49e644005\n"
                     "- База проектов (БД): f76d34df-10da-433d-ab12-68b9d8624d07\n"
+                    "- База подрядчиков/исполнителей (БД): a614d693-5a43-4d90-8d3f-f3c472342053\n"
                     "- Задачи и проверочные списки: d9014f76-e13d-4a0c-9958-f5dc3d11405f\n"
                     "- Оплаты: 75a22cfb-9371-4e38-9896-5003d6b69a1b\n"
                     "- Поступления и траты: f503e4b8-1489-422e-972a-353d331b3917\n"
@@ -879,6 +963,8 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "Если в предыдущем сообщении был текст тендера/предложения — возьми оттуда название, сроки, бюджет.\n"
                     "Если пользователь говорит 'занеси', 'добавь', 'создай' + 'контакт/контакты/crm' — "
                     "ТЫ ОБЯЗАН вызвать create_contact.\n"
+                    "Если пользователь говорит 'занеси', 'добавь' + 'подрядчик/подрядчиков/исполнитель' — "
+                    "ТЫ ОБЯЗАН вызвать create_contractor. Подрядчики — это ОТДЕЛЬНАЯ база от CRM/контактов!\n"
                     "НИКОГДА не отвечай 'не могу создать' — у тебя ЕСТЬ инструменты для этого!\n"
                     "Бери данные из ВСЕЙ истории переписки, не спрашивай то что уже есть в сообщениях.\n\n"
                     "При создании контактов: ВНИМАТЕЛЬНО смотри на скриншот/изображение и извлекай ВСЕ данные: "
