@@ -368,6 +368,24 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_page_property",
+            "description": "Обновить свойство записи в любой базе Notion (статус, приоритет, текстовое поле и т.д.). Использовать когда пользователь просит 'поменяй статус', 'обнови', 'измени статус на', 'поставь приоритет'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "database": {"type": "string", "description": "База: 'contacts' (CRM), 'projects', 'contractors', 'portfolio'"},
+                    "name": {"type": "string", "description": "Название/имя записи для поиска (часть имени)"},
+                    "property": {"type": "string", "description": "Имя свойства в Notion, например 'Статус', 'Приоритет', 'Комментарий'"},
+                    "value": {"type": "string", "description": "Новое значение"},
+                    "property_type": {"type": "string", "description": "Тип свойства: 'status', 'select', 'multi_select', 'rich_text', 'number', 'checkbox'. По умолчанию 'status'."},
+                },
+                "required": ["database", "name", "property", "value"],
+            },
+        },
+    },
 ]
 
 
@@ -465,6 +483,111 @@ async def notion_assign_task(title_query: str) -> str:
     if resp.status_code == 200:
         return f"Кирилл назначен ответственным за задачу '{task['title']}'."
     return "Ошибка при назначении ответственного."
+
+
+async def notion_update_page_property(args: dict) -> str:
+    """Обновляет свойство любой страницы в Notion (статус, текст, число и т.д.)."""
+    db_map = {
+        "projects": PROJECTS_DB_ID,
+        "contacts": CONTACTS_DB_ID,
+        "contractors": CONTRACTORS_DB_ID,
+        "portfolio": PORTFOLIO_DB_ID,
+    }
+    database = args.get("database", "contacts").lower().strip()
+    if database in ("проекты", "project", "projects"):
+        database = "projects"
+    elif database in ("контакты", "contact", "contacts", "crm", "срм"):
+        database = "contacts"
+    elif database in ("подрядчики", "contractor", "contractors"):
+        database = "contractors"
+    elif database in ("портфолио", "portfolio"):
+        database = "portfolio"
+    db_id = db_map.get(database, CONTACTS_DB_ID)
+    name_query = args.get("name", "").lower().strip()
+    prop_name = args.get("property", "Статус")
+    prop_value = args.get("value", "")
+    prop_type = args.get("property_type", "status")  # status, select, rich_text, number, checkbox
+
+    if not name_query or not prop_value:
+        return "Не указано имя записи или значение для обновления."
+
+    # Ищем запись в базе
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"https://api.notion.com/v1/databases/{db_id}/query",
+            headers=NOTION_HEADERS,
+            json={"page_size": 100},
+        )
+    if resp.status_code != 200:
+        return f"Ошибка при поиске: {resp.status_code}"
+    results = resp.json().get("results", [])
+    matched = None
+    for r in results:
+        props = r.get("properties", {})
+        for val in props.values():
+            if val.get("type") == "title":
+                arr = val.get("title", [])
+                title = arr[0].get("plain_text", "").strip() if arr else ""
+                if name_query in title.lower():
+                    matched = r
+                    break
+        if matched:
+            break
+    if not matched:
+        return f"Запись «{args.get('name')}» не найдена в базе."
+
+    # Формируем обновление
+    if prop_type == "status":
+        update_props = {prop_name: {"status": {"name": prop_value}}}
+    elif prop_type == "select":
+        update_props = {prop_name: {"select": {"name": prop_value}}}
+    elif prop_type == "multi_select":
+        update_props = {prop_name: {"multi_select": [{"name": v.strip()} for v in prop_value.split(",")]}}
+    elif prop_type == "rich_text":
+        update_props = {prop_name: {"rich_text": [{"text": {"content": prop_value}}]}}
+    elif prop_type == "number":
+        update_props = {prop_name: {"number": float(prop_value)}}
+    elif prop_type == "checkbox":
+        update_props = {prop_name: {"checkbox": prop_value.lower() in ("true", "да", "1", "yes")}}
+    else:
+        update_props = {prop_name: {"status": {"name": prop_value}}}
+
+    page_id = matched["id"]
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.patch(
+            f"https://api.notion.com/v1/pages/{page_id}",
+            headers=NOTION_HEADERS,
+            json={"properties": update_props},
+        )
+    if resp.status_code == 200:
+        title = ""
+        for val in matched.get("properties", {}).values():
+            if val.get("type") == "title":
+                arr = val.get("title", [])
+                title = arr[0].get("plain_text", "").strip() if arr else ""
+                break
+        pid = page_id.replace("-", "")
+        return f'✅ Обновлено: <a href="https://notion.so/{pid}">{title}</a> → {prop_name}: {prop_value}'
+    print(f"[UPDATE ERROR] {resp.status_code}: {resp.text[:300]}")
+    # Попробуем select вместо status
+    if prop_type == "status":
+        update_props = {prop_name: {"select": {"name": prop_value}}}
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp2 = await client.patch(
+                f"https://api.notion.com/v1/pages/{page_id}",
+                headers=NOTION_HEADERS,
+                json={"properties": update_props},
+            )
+        if resp2.status_code == 200:
+            title = ""
+            for val in matched.get("properties", {}).values():
+                if val.get("type") == "title":
+                    arr = val.get("title", [])
+                    title = arr[0].get("plain_text", "").strip() if arr else ""
+                    break
+            pid = page_id.replace("-", "")
+            return f'✅ Обновлено: <a href="https://notion.so/{pid}">{title}</a> → {prop_name}: {prop_value}'
+    return f"Ошибка при обновлении: {resp.status_code} {resp.text[:200]}"
 
 
 async def notion_search(query: str) -> str:
@@ -1062,6 +1185,8 @@ async def run_tool(name: str, args: dict) -> str:
         return await notion_query_database(args)
     elif name == "create_portfolio":
         return await notion_create_portfolio(args)
+    elif name == "update_page_property":
+        return await notion_update_page_property(args)
     return "Неизвестная функция."
 
 
@@ -1313,6 +1438,8 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "Если пользователь спрашивает 'что в проектах', 'покажи проекты', 'над чем работаем', "
                     "'какие проекты', 'статус проектов' — ТЫ ОБЯЗАН вызвать query_database с database='projects'. "
                     "НИКОГДА не отвечай 'перейдите по ссылке' или 'не могу получить данные' — вызови query_database!\n"
+                    "Если пользователь просит 'поменяй статус', 'обнови', 'измени' — вызови update_page_property. "
+                    "НИКОГДА не предлагай 'перейдите по ссылке и измените' — ВСЕГДА меняй через update_page_property!\n"
                     "НИКОГДА не отвечай 'не могу создать' — у тебя ЕСТЬ инструменты для этого!\n"
                     "Бери данные из ВСЕЙ истории переписки, не спрашивай то что уже есть в сообщениях.\n\n"
                     "При создании контактов: ВНИМАТЕЛЬНО смотри на скриншот/изображение и извлекай ВСЕ данные: "
