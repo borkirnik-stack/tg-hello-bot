@@ -555,11 +555,24 @@ async def notion_create_contact(args: dict) -> str:
     if args.get("status"):
         props["Статус"] = {"status": {"name": args["status"]}}
 
+    from datetime import datetime
+    now = datetime.now().strftime("%d.%m.%Y %H:%M")
+    children = [
+        {
+            "object": "block",
+            "type": "callout",
+            "callout": {
+                "icon": {"emoji": "🤖"},
+                "rich_text": [{"text": {"content": f"Создано через бот · Кирилл · {now}"}}],
+            },
+        }
+    ]
+
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
             "https://api.notion.com/v1/pages",
             headers=NOTION_HEADERS,
-            json={"parent": {"database_id": CONTACTS_DB_ID}, "properties": props},
+            json={"parent": {"database_id": CONTACTS_DB_ID}, "properties": props, "children": children},
         )
     if resp.status_code == 200:
         page_id = resp.json().get("id", "").replace("-", "")
@@ -587,11 +600,24 @@ async def notion_create_project(args: dict) -> str:
     if args.get("notes"):
         props["Доп. информация // От тендеровика"] = {"rich_text": [{"text": {"content": args["notes"]}}]}
 
+    from datetime import datetime
+    now = datetime.now().strftime("%d.%m.%Y %H:%M")
+    children = [
+        {
+            "object": "block",
+            "type": "callout",
+            "callout": {
+                "icon": {"emoji": "🤖"},
+                "rich_text": [{"text": {"content": f"Создано через бот · Кирилл · {now}"}}],
+            },
+        }
+    ]
+
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
             "https://api.notion.com/v1/pages",
             headers=NOTION_HEADERS,
-            json={"parent": {"database_id": PROJECTS_DB_ID}, "properties": props},
+            json={"parent": {"database_id": PROJECTS_DB_ID}, "properties": props, "children": children},
         )
     if resp.status_code == 200:
         page_id = resp.json().get("id", "").replace("-", "")
