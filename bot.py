@@ -111,8 +111,12 @@ def _detect_tool_choice(text: str):
         return {"type": "function", "function": {"name": "create_project"}}
     if has_create and ("контакт" in tl or "crm" in tl or "срм" in tl):
         return {"type": "function", "function": {"name": "create_contact"}}
-    # Если спрашивают про статусы/данные из базы проектов
-    if "проект" in tl and any(w in tl for w in ("статус", "что в ", "какие ", "покажи", "список")):
+    # Если спрашивают про проекты / статусы / что в работе
+    project_words = ("проект", "преокт")
+    query_words = ("статус", "что в ", "какие ", "покажи", "список", "работ", "канбан",
+                    "сколько", "что сейчас", "что у нас", "над чем", "в работе",
+                    "лиды", "брифинг", "постпродакшн", "производств", "препродакшн")
+    if any(pw in tl for pw in project_words) and any(w in tl for w in query_words):
         return {"type": "function", "function": {"name": "query_database"}}
     return "auto"
 
@@ -848,7 +852,18 @@ async def notion_query_database(args: dict) -> str:
         "contractors": CONTRACTORS_DB_ID,
         "portfolio": PORTFOLIO_DB_ID,
     }
-    db_id = db_map.get(args.get("database", ""), PROJECTS_DB_ID)
+    raw_db = args.get("database", "projects").lower().strip()
+    # Нормализуем — GPT может передать по-русски или с ошибкой
+    if raw_db in ("проекты", "project", "projects", ""):
+        raw_db = "projects"
+    elif raw_db in ("контакты", "contact", "contacts", "crm"):
+        raw_db = "contacts"
+    elif raw_db in ("подрядчики", "contractor", "contractors", "исполнители"):
+        raw_db = "contractors"
+    elif raw_db in ("портфолио", "portfolio"):
+        raw_db = "portfolio"
+    db_id = db_map.get(raw_db, PROJECTS_DB_ID)
+    print(f"[QUERY_DB] raw={args.get('database')}, normalized={raw_db}, db_id={db_id}")
     is_projects = (db_id == PROJECTS_DB_ID)
     body = {"page_size": 50}
     filter_status = args.get("filter_status")
