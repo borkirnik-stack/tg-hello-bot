@@ -571,7 +571,7 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conversations[user_id].append({"role": "user", "content": text})
 
         response = await openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": (
                     "Ты полезный ассистент Кирилла в компании KINEMÓTOR PRODUCTION (видеопродакшн, Москва). "
@@ -596,7 +596,8 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "- Стратегия: 996deae7-9b3f-4645-842a-2a6ade9e60fb\n"
                     "- PR: 246bf5c1-9108-8065-9926-d0a0ae7a870f\n"
                     "- Архив: 63900bcf-e088-4a28-9f92-fea1437e5819\n"
-                    "Если пользователь просит что-то из Notion — сразу используй get_page_content с нужным ID, не спрашивай. "
+                    "ВАЖНО: когда пользователь спрашивает про любой раздел — CRM, Финансы, HR, Продакшн, NewBiz и т.д. — "
+                    "ТЫ ОБЯЗАН вызвать get_page_content с ID из списка выше. НИКОГДА не отвечай по памяти. "
                     "Если пользователь говорит 'занеси проект', 'добавь проект', 'новый проект' — используй create_project. "
                     "Спроси только то чего точно нет в сообщении (минимум вопросов). Название обязательно, остальное опционально."
                 )},
