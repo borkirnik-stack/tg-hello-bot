@@ -721,7 +721,15 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file = await context.bot.get_file(photo.file_id)
             file_bytes = await file.download_as_bytearray()
             image_b64 = base64.b64encode(file_bytes).decode("utf-8")
-            caption = update.message.caption or "Что на этой картинке?"
+            caption = update.message.caption or text or "Что на этой картинке?"
+            # Добавляем инфо о пересланном сообщении
+            if update.message.forward_from:
+                fwd = update.message.forward_from
+                fwd_name = f"{fwd.first_name or ''} {fwd.last_name or ''}".strip()
+                fwd_user = f"@{fwd.username}" if fwd.username else ""
+                caption += f"\n[Переслано от: {fwd_name} {fwd_user}]"
+            elif update.message.forward_sender_name:
+                caption += f"\n[Переслано от: {update.message.forward_sender_name}]"
             content = [
                 {"type": "text", "text": caption},
                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
@@ -769,6 +777,11 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "ВАЖНО: когда пользователь спрашивает про любой раздел — CRM, Финансы, HR, Продакшн, NewBiz и т.д. — "
                     "ТЫ ОБЯЗАН вызвать get_page_content с ID из списка выше. НИКОГДА не отвечай по памяти. "
                     "Если пользователь говорит 'занеси проект', 'добавь проект', 'новый проект' — используй create_project. "
+                    "Если пользователь говорит 'занеси контакт/в контакты' — используй create_contact. "
+                    "При создании контактов: ВНИМАТЕЛЬНО смотри на скриншот/изображение и извлекай ВСЕ данные: "
+                    "имя, фамилию, @username (телеграм), компанию, должность, email, телефон. "
+                    "Имя и фамилию ВСЕГДА переводи на русский. НЕ спрашивай то, что видно на скриншоте. "
+                    "Если данные есть в пересланном сообщении или на скриншоте — бери оттуда и сразу создавай. "
                     "Спроси только то чего точно нет в сообщении (минимум вопросов). Название обязательно, остальное опционально."
                 )},
                 *conversations[user_id],
