@@ -867,6 +867,9 @@ async def notion_query_database(args: dict) -> str:
     print(f"[QUERY_DB] raw={args.get('database')}, normalized={raw_db}, db_id={db_id}")
     is_projects = (db_id == PROJECTS_DB_ID)
     body = {"page_size": 100}
+    # Сортировка по дате создания (новые сверху) для всех баз кроме проектов
+    if not is_projects:
+        body["sorts"] = [{"timestamp": "created_time", "direction": "descending"}]
     # Фильтрация — без фильтра если что-то пойдёт не так (fallback в retry ниже)
     filter_status = args.get("filter_status")
     if filter_status:
@@ -983,7 +986,7 @@ async def notion_query_database(args: dict) -> str:
         total_active = sum(len(v) for v in by_status.values())
         return "\n".join(lines) + f"\n\nВсего активных: {total_active}"
     else:
-        # Для остальных баз — простой список
+        # Для остальных баз — простой список с датой добавления
         lines = []
         for r in results:
             props = r.get("properties", {})
@@ -1002,11 +1005,18 @@ async def notion_query_database(args: dict) -> str:
                     status = sp["status"].get("name", "")
                 elif sp.get("type") == "select" and sp.get("select"):
                     status = sp["select"].get("name", "")
+            # Дата создания
+            created = r.get("created_time", "")[:10]  # "2025-03-15"
             page_id = r["id"].replace("-", "")
             link = f"https://notion.so/{page_id}"
             line = f'• <a href="{link}">{title}</a>'
+            extras = []
             if status:
-                line += f" [{status}]"
+                extras.append(status)
+            if created:
+                extras.append(created)
+            if extras:
+                line += f" [{', '.join(extras)}]"
             lines.append(line)
         return "\n".join(lines) + f"\n\nПоказано: {len(lines)}"
 
@@ -1336,7 +1346,13 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             final = await openai_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "Ты полезный ассистент. Отвечай на русском языке."},
+                    {"role": "system", "content": (
+                        "Ты полезный ассистент. Отвечай на русском языке. "
+                        "ВАЖНО: если в результатах инструмента есть HTML-ссылки (<a href=\"...\">текст</a>), "
+                        "ты ОБЯЗАН сохранить их в ответе КАК ЕСТЬ. НЕ заменяй на markdown, НЕ добавляй ** вокруг текста. "
+                        "Используй HTML-формат: <b>жирный</b>, <i>курсив</i>. НЕ используй markdown (* или **). "
+                        "Передавай ссылки из результатов дословно."
+                    )},
                     *conversations[user_id],
                 ],
             )
