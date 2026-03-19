@@ -1,4 +1,5 @@
 import os
+import asyncio
 import base64
 import json
 import time
@@ -1119,7 +1120,23 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("История очищена.", reply_markup=MAIN_MENU)
         return
 
-    thinking_msg = await update.message.reply_text("⏳")
+    thinking_msg = await update.message.reply_text("◻️◻️◻️")
+    _anim_running = True
+
+    async def _animate_thinking():
+        frames = ["◼️◻️◻️", "◻️◼️◻️", "◻️◻️◼️", "◻️◼️◻️"]
+        i = 0
+        while _anim_running:
+            await asyncio.sleep(0.6)
+            if not _anim_running:
+                break
+            try:
+                await thinking_msg.edit_text(frames[i % len(frames)])
+            except Exception:
+                break
+            i += 1
+
+    anim_task = asyncio.create_task(_animate_thinking())
 
     try:
         if update.message.photo:
@@ -1250,9 +1267,13 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply = msg.content
             conversations[user_id].append({"role": "assistant", "content": reply})
 
+        _anim_running = False
+        anim_task.cancel()
         await thinking_msg.edit_text(reply)
 
     except Exception as e:
+        _anim_running = False
+        anim_task.cancel()
         import traceback
         traceback.print_exc()
         try:
