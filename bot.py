@@ -54,6 +54,43 @@ NOTION_HEADERS = {
     "Content-Type": "application/json",
 }
 
+NOTION_SECTIONS = {
+    "newbiz": "c09cbafe-666f-4986-b052-d97aae4cb60a",
+    "нью биз": "c09cbafe-666f-4986-b052-d97aae4cb60a",
+    "ньюбиз": "c09cbafe-666f-4986-b052-d97aae4cb60a",
+    "продакшн": "9cecff83-7e49-4f54-a5eb-0b3ca89766b5",
+    "production": "9cecff83-7e49-4f54-a5eb-0b3ca89766b5",
+    "финансы": "057ba715-c30b-4fa3-b375-a5b9935f2f4f",
+    "финанс": "057ba715-c30b-4fa3-b375-a5b9935f2f4f",
+    "hr": "cbde043e-2aad-4e20-a7ac-9b0e3f16a6b1",
+    "управление": "0c13ad32-6d3e-46be-83b4-fd22a5b63a27",
+    "crm": "71a73c06-4a49-451d-abca-fe3e34078227",
+    "срм": "71a73c06-4a49-451d-abca-fe3e34078227",
+    "crma": "71a73c06-4a49-451d-abca-fe3e34078227",
+    "проекты км": "4dd52333-9829-4f10-8fb4-14d49e644005",
+    "проекты": "4dd52333-9829-4f10-8fb4-14d49e644005",
+    "задачи": "d9014f76-e13d-4a0c-9958-f5dc3d11405f",
+    "оплаты": "75a22cfb-9371-4e38-9896-5003d6b69a1b",
+    "поступления": "f503e4b8-1489-422e-972a-353d331b3917",
+    "траты": "f503e4b8-1489-422e-972a-353d331b3917",
+    "портфолио": "186bf5c1-9108-80d0-bc66-ff069000926e",
+    "база знаний": "9c33eadf-421b-46a8-9528-76d50b0cc182",
+    "знания": "9c33eadf-421b-46a8-9528-76d50b0cc182",
+    "оргсхема": "36809ee1-9d98-4d3e-a9ed-f30d0c1b1dec",
+    "стратегия": "996deae7-9b3f-4645-842a-2a6ade9e60fb",
+    "pr": "246bf5c1-9108-8065-9926-d0a0ae7a870f",
+    "пиар": "246bf5c1-9108-8065-9926-d0a0ae7a870f",
+    "архив": "63900bcf-e088-4a28-9f92-fea1437e5819",
+}
+
+def detect_notion_section(text: str) -> str | None:
+    """Возвращает ID Notion-страницы если в тексте упоминается раздел воркспейса."""
+    tl = text.lower()
+    for keyword, page_id in NOTION_SECTIONS.items():
+        if keyword in tl:
+            return page_id
+    return None
+
 conversations = {}
 WAITING_TASK = 1
 _tasks_cache: list = []
@@ -570,6 +607,13 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             conversations[user_id].append({"role": "user", "content": text})
 
+        # Авто-подгрузка Notion раздела если упоминается в сообщении
+        section_id = detect_notion_section(text) if text else None
+        extra_context = ""
+        if section_id:
+            notion_data = await notion_get_page_content(section_id)
+            extra_context = f"\n\n[Данные из Notion по запросу пользователя]\n{notion_data}"
+
         response = await openai_client.chat.completions.create(
             model="gpt-4o",
             messages=[
@@ -600,7 +644,7 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "ТЫ ОБЯЗАН вызвать get_page_content с ID из списка выше. НИКОГДА не отвечай по памяти. "
                     "Если пользователь говорит 'занеси проект', 'добавь проект', 'новый проект' — используй create_project. "
                     "Спроси только то чего точно нет в сообщении (минимум вопросов). Название обязательно, остальное опционально."
-                )},
+                ) + extra_context},
                 *conversations[user_id],
             ],
             tools=TOOLS,
