@@ -1,4 +1,5 @@
 import os
+import io
 import asyncio
 import base64
 import json
@@ -1121,6 +1122,26 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text if update.message.text else ""
     chat_type = update.effective_chat.type  # "private", "group", "supergroup"
 
+    # Голосовые сообщения — транскрибируем через Whisper
+    voice = update.message.voice or update.message.audio
+    if voice and not text:
+        try:
+            file = await context.bot.get_file(voice.file_id)
+            file_bytes = await file.download_as_bytearray()
+            audio_file = io.BytesIO(file_bytes)
+            audio_file.name = "voice.ogg"
+            transcription = await openai_client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                language="ru",
+            )
+            text = transcription.text
+            print(f"[VOICE] Transcribed: {text}")
+        except Exception as e:
+            print(f"[VOICE ERROR] {e}")
+            await update.message.reply_text("Не удалось распознать голосовое сообщение 😔")
+            return
+
     # Проверка доступа
     if not await is_allowed(user_id, context.bot):
         return  # молча игнорируем неавторизованных
@@ -1350,6 +1371,7 @@ def main():
     app.add_handler(CommandHandler("testdb", testdb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
     app.add_handler(MessageHandler(filters.PHOTO, chat))
+    app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, chat))
 
     # Запускаем веб-сервер в отдельном потоке
     port = int(os.environ.get("PORT", 8080))
