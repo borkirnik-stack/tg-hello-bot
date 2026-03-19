@@ -81,9 +81,15 @@ NOTION_SECTIONS = {
     "архив": "63900bcf-e088-4a28-9f92-fea1437e5819",
 }
 
+CREATE_KEYWORDS = ("занеси", "добавь", "создай", "запиши", "внеси", "новый проект", "новый контакт")
+
 def detect_notion_section(text: str) -> str | None:
-    """Возвращает ID Notion-страницы если в тексте упоминается раздел воркспейса."""
+    """Возвращает ID Notion-страницы если в тексте упоминается раздел воркспейса.
+    Не триггерится если пользователь просит создать/занести что-то."""
     tl = text.lower()
+    # Если пользователь просит создать — не подгружаем данные, пусть GPT вызовет tool
+    if any(kw in tl for kw in CREATE_KEYWORDS):
+        return None
     for keyword, page_id in NOTION_SECTIONS.items():
         if keyword in tl:
             return page_id
