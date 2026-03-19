@@ -766,19 +766,33 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             image_b64 = base64.b64encode(file_bytes).decode("utf-8")
             caption = update.message.caption or text or "Что на этой картинке?"
             # Добавляем инфо о пересланном сообщении
-            if update.message.forward_from:
-                fwd = update.message.forward_from
-                fwd_name = f"{fwd.first_name or ''} {fwd.last_name or ''}".strip()
-                fwd_user = f"@{fwd.username}" if fwd.username else ""
-                caption += f"\n[Переслано от: {fwd_name} {fwd_user}]"
-            elif update.message.forward_sender_name:
-                caption += f"\n[Переслано от: {update.message.forward_sender_name}]"
+            fwd = getattr(update.message, 'forward_origin', None)
+            if fwd:
+                fwd_type = fwd.type if hasattr(fwd, 'type') else ''
+                if fwd_type == 'user' and hasattr(fwd, 'sender_user'):
+                    u = fwd.sender_user
+                    fwd_name = f"{u.first_name or ''} {u.last_name or ''}".strip()
+                    fwd_user = f"@{u.username}" if u.username else ""
+                    caption += f"\n[Переслано от: {fwd_name} {fwd_user}]"
+                elif fwd_type == 'hidden_user' and hasattr(fwd, 'sender_user_name'):
+                    caption += f"\n[Переслано от: {fwd.sender_user_name}]"
             content = [
                 {"type": "text", "text": caption},
                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
             ]
             conversations[user_id].append({"role": "user", "content": content})
         else:
+            # Добавляем инфо о пересланном текстовом сообщении
+            fwd = getattr(update.message, 'forward_origin', None)
+            if fwd:
+                fwd_type = fwd.type if hasattr(fwd, 'type') else ''
+                if fwd_type == 'user' and hasattr(fwd, 'sender_user'):
+                    u = fwd.sender_user
+                    fwd_name = f"{u.first_name or ''} {u.last_name or ''}".strip()
+                    fwd_user = f"@{u.username}" if u.username else ""
+                    text += f"\n[Переслано от: {fwd_name} {fwd_user}]"
+                elif fwd_type == 'hidden_user' and hasattr(fwd, 'sender_user_name'):
+                    text += f"\n[Переслано от: {fwd.sender_user_name}]"
             # Авто-подгрузка Notion раздела если упоминается в сообщении
             user_msg = text
             section_id = detect_notion_section(text) if text else None
