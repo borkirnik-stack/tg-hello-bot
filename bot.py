@@ -414,43 +414,76 @@ async def notion_get_page_content(page_id: str) -> str:
     if not blocks:
         return "Страница пустая или нет доступа к содержимому."
 
-    lines = []
-    for b in blocks:
-        btype = b.get("type", "")
-        block_data = b.get(btype, {})
-        rich = block_data.get("rich_text", [])
-        text = "".join(rt.get("plain_text", "") for rt in rich).strip()
-        if btype in ("paragraph", "quote"):
-            if text:
-                lines.append(text)
-        elif btype.startswith("heading_"):
-            if text:
-                prefix = "#" * int(btype[-1])
-                lines.append(f"{prefix} {text}")
-        elif btype == "bulleted_list_item":
-            if text:
-                lines.append(f"• {text}")
-        elif btype == "numbered_list_item":
-            if text:
-                lines.append(f"— {text}")
-        elif btype == "to_do":
-            checked = block_data.get("checked", False)
-            if text:
-                lines.append(f"{'✅' if checked else '☐'} {text}")
-        elif btype == "divider":
-            lines.append("---")
-        elif btype == "child_page":
-            title = block_data.get("title", "Без названия")
-            child_id = b["id"].replace("-", "")
-            lines.append(f"📄 {title}\n   🔗 https://notion.so/{child_id}")
-        elif btype == "child_database":
-            title = block_data.get("title", "Без названия")
-            child_id = b["id"].replace("-", "")
-            lines.append(f"🗃 {title}\n   🔗 https://notion.so/{child_id}")
-        elif btype == "link_to_page":
-            linked = block_data.get("page_id") or block_data.get("database_id", "")
-            linked_id = linked.replace("-", "")
-            lines.append(f"🔗 https://notion.so/{linked_id}")
+    def extract_text(rich_text):
+        return "".join(rt.get("plain_text", "") for rt in rich_text).strip()
+
+    async def parse_blocks(block_list, indent=""):
+        result = []
+        for b in block_list:
+            btype = b.get("type", "")
+            bd = b.get(btype, {})
+            text = extract_text(bd.get("rich_text", []))
+            if btype in ("paragraph", "quote"):
+                if text:
+                    result.append(indent + text)
+            elif btype.startswith("heading_"):
+                if text:
+                    prefix = "#" * int(btype[-1])
+                    result.append(indent + f"{prefix} {text}")
+            elif btype == "callout":
+                icon = bd.get("icon", {})
+                emoji = icon.get("emoji", "💡") if icon else "💡"
+                if text:
+                    result.append(indent + f"{emoji} {text}")
+            elif btype == "bulleted_list_item":
+                if text:
+                    result.append(indent + f"• {text}")
+            elif btype == "numbered_list_item":
+                if text:
+                    result.append(indent + f"— {text}")
+            elif btype == "to_do":
+                checked = bd.get("checked", False)
+                if text:
+                    result.append(indent + f"{'✅' if checked else '☐'} {text}")
+            elif btype == "divider":
+                result.append("---")
+            elif btype == "child_page":
+                title = bd.get("title", "Без названия")
+                child_id = b["id"].replace("-", "")
+                result.append(indent + f"📄 {title}\n   🔗 https://notion.so/{child_id}")
+            elif btype == "child_database":
+                title = bd.get("title", "Без названия")
+                child_id = b["id"].replace("-", "")
+                result.append(indent + f"🗃 {title}\n   🔗 https://notion.so/{child_id}")
+            elif btype == "link_to_page":
+                linked = bd.get("page_id") or bd.get("database_id", "")
+                linked_id = linked.replace("-", "")
+                result.append(indent + f"🔗 https://notion.so/{linked_id}")
+            elif btype in ("column_list", "column"):
+                # Раскрываем колонки рекурсивно
+                async with httpx.AsyncClient(timeout=15) as c2:
+                    r2 = await c2.get(
+                        f"https://api.notion.com/v1/blocks/{b['id']}/children?page_size=50",
+                        headers=NOTION_HEADERS,
+                    )
+                if r2.status_code == 200:
+                    inner = r2.json().get("results", [])
+                    result.extend(await parse_blocks(inner, indent))
+            elif btype == "synced_block":
+                # Синхронизированный блок — читаем детей
+                async with httpx.AsyncClient(timeout=15) as c2:
+                    r2 = await c2.get(
+                        f"https://api.notion.com/v1/blocks/{b['id']}/children?page_size=50",
+                        headers=NOTION_HEADERS,
+                    )
+                if r2.status_code == 200:
+                    inner = r2.json().get("results", [])
+                    result.extend(await parse_blocks(inner, indent))
+            elif btype == "table":
+                result.append(indent + "[таблица]")
+        return result
+
+    lines = await parse_blocks(blocks)
 
     content = "\n".join(lines) if lines else ""
 
