@@ -95,6 +95,17 @@ _tasks_cache: list = []
 _tasks_cache_time: float = 0
 CACHE_TTL = 60  # секунд
 
+# Доступ: список разрешённых user_id. Первый — админ.
+_allowed_raw = os.environ.get("ALLOWED_USERS", "")
+ALLOWED_USERS: set[int] = set(int(x.strip()) for x in _allowed_raw.split(",") if x.strip())
+ADMIN_ID = int(_allowed_raw.split(",")[0].strip()) if ALLOWED_USERS else None
+
+def is_allowed(user_id: int) -> bool:
+    """Если ALLOWED_USERS не задан — пускаем всех. Иначе только из списка."""
+    if not ALLOWED_USERS:
+        return True
+    return user_id in ALLOWED_USERS
+
 def build_main_menu() -> ReplyKeyboardMarkup:
     webapp_url = os.environ.get("WEBAPP_URL", "")
     rows = [
@@ -664,16 +675,35 @@ async def run_tool(name: str, args: dict) -> str:
     return "Неизвестная функция."
 
 
-BOT_VERSION = "v7"
+BOT_VERSION = "v8"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    if not is_allowed(user_id):
+        await update.message.reply_text(f"⛔ Нет доступа.\nТвой ID: {user_id}\nПопроси админа добавить тебя.")
+        return
     conversations[user_id] = []
     await update.message.reply_text(
         f"Привет! Я умный бот ({BOT_VERSION}). Просто пиши что нужно — я сам разберусь.\n\n"
         "Например: «занеси задачу купить молоко» или «покажи мои задачи»",
         reply_markup=MAIN_MENU,
     )
+
+async def allow_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Админ-команда: /allow <user_id> — добавить пользователя."""
+    user_id = update.effective_user.id
+    if ADMIN_ID and user_id != ADMIN_ID:
+        await update.message.reply_text("⛔ Только админ может добавлять пользователей.")
+        return
+    if not context.args:
+        await update.message.reply_text(f"Использование: /allow <user_id>\n\nТекущий список: {ALLOWED_USERS or 'все'}")
+        return
+    try:
+        new_id = int(context.args[0])
+        ALLOWED_USERS.add(new_id)
+        await update.message.reply_text(f"✅ Пользователь {new_id} добавлен.\nВсего: {len(ALLOWED_USERS)}")
+    except ValueError:
+        await update.message.reply_text("ID должен быть числом.")
 
 async def test_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Debug: тестирует подключение к Notion."""
@@ -698,6 +728,10 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text if update.message.text else ""
     chat_type = update.effective_chat.type  # "private", "group", "supergroup"
+
+    # Проверка доступа
+    if not is_allowed(user_id):
+        return  # молча игнорируем неавторизованных
 
     # В группах отвечаем только если упомянули бота или ответили на его сообщение
     if chat_type in ("group", "supergroup"):
@@ -887,6 +921,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("test", test_notion))
+    app.add_handler(CommandHandler("allow", allow_user))
     app.add_handler(add_task_conv)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
     app.add_handler(MessageHandler(filters.PHOTO, chat))
