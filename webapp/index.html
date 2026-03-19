@@ -176,6 +176,51 @@
       font-size: 18px;
     }
 
+    .section-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.25);
+      margin-bottom: 10px;
+      margin-top: 4px;
+      text-align: left;
+      animation: fadeUp 0.8s 0.35s ease both;
+    }
+
+    .social-row {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      margin-bottom: 24px;
+      animation: fadeUp 0.8s 0.45s ease both;
+    }
+
+    .social-btn {
+      flex: 1;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 10px 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-decoration: none;
+      color: inherit;
+    }
+    .social-btn:active {
+      transform: scale(0.95);
+      background: rgba(255,255,255,0.1);
+    }
+    .social-btn span:first-child { font-size: 18px; }
+    .social-btn span:last-child {
+      font-size: 10px;
+      color: rgba(255,255,255,0.35);
+    }
+
     .footer {
       font-size: 12px;
       color: rgba(255,255,255,0.2);
@@ -230,6 +275,55 @@
         </div>
         <div class="card-arrow">›</div>
       </div>
+    </div>
+
+    <div class="section-label">KINEMOTOR</div>
+
+    <div class="cards">
+      <a class="card" href="https://vimeo.com/930223470" target="_blank">
+        <div class="card-icon">▶️</div>
+        <div class="card-text">
+          <div class="card-title">Showreel</div>
+          <div class="card-sub">Смотреть на Vimeo</div>
+        </div>
+        <div class="card-arrow">›</div>
+      </a>
+
+      <a class="card" href="https://kinemotor.pro/brief/" target="_blank">
+        <div class="card-icon">📄</div>
+        <div class="card-text">
+          <div class="card-title">Заполнить бриф</div>
+          <div class="card-sub">Начать проект</div>
+        </div>
+        <div class="card-arrow">›</div>
+      </a>
+
+      <a class="card" href="mailto:go@kinemotor.pro">
+        <div class="card-icon">✉️</div>
+        <div class="card-text">
+          <div class="card-title">go@kinemotor.pro</div>
+          <div class="card-sub">Написать напрямую</div>
+        </div>
+        <div class="card-arrow">›</div>
+      </a>
+    </div>
+
+    <div class="social-row">
+      <a class="social-btn" href="https://www.instagram.com/kinemotor" target="_blank">
+        <span>📷</span><span>Instagram</span>
+      </a>
+      <a class="social-btn" href="https://www.youtube.com/@kinemotor" target="_blank">
+        <span>▶️</span><span>YouTube</span>
+      </a>
+      <a class="social-btn" href="https://t.me/kinemotor" target="_blank">
+        <span>✈️</span><span>Telegram</span>
+      </a>
+      <a class="social-btn" href="https://vimeo.com/kinemotor" target="_blank">
+        <span>🎬</span><span>Vimeo</span>
+      </a>
+      <a class="social-btn" href="https://vk.com/kinemotor" target="_blank">
+        <span>💙</span><span>VK</span>
+      </a>
     </div>
 
     <div class="footer">made with ✦ claude</div>
