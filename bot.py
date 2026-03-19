@@ -1120,19 +1120,25 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("История очищена.", reply_markup=MAIN_MENU)
         return
 
-    thinking_msg = await update.message.reply_text("🧠 Думаю")
+    thinking_msg = await update.message.reply_text("🟩⬛⬛⬛")
     _anim_running = True
 
     async def _animate_thinking():
         frames = [
-            "🧠 Думаю",
-            "🧠 Думаю.",
-            "🧠 Думаю..",
-            "🧠 Думаю...",
-            "🧠 Думаю....",
-            "🧠 Думаю...",
-            "🧠 Думаю..",
-            "🧠 Думаю.",
+            "🟩⬛⬛⬛",
+            "🟩🩵⬛⬛",
+            "🟩🩵🔷⬛",
+            "🟩🩵🔷🟦",
+            "⬛🩵🔷🟦",
+            "⬛⬛🔷🟦",
+            "⬛⬛⬛🟦",
+            "⬛⬛⬛⬛",
+            "⬛⬛⬛🟦",
+            "⬛⬛🔷🟦",
+            "⬛🩵🔷🟦",
+            "🟩🩵🔷🟦",
+            "🟩🩵🔷⬛",
+            "🟩🩵⬛⬛",
         ]
         i = 0
         while _anim_running:
