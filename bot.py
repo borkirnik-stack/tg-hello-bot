@@ -111,11 +111,15 @@ def _detect_tool_choice(text: str):
         return {"type": "function", "function": {"name": "create_project"}}
     if has_create and ("контакт" in tl or "crm" in tl or "срм" in tl):
         return {"type": "function", "function": {"name": "create_contact"}}
-    # Если спрашивают про проекты / статусы / что в работе
+    # Если упоминают проекты БЕЗ создания — всегда query_database
     project_words = ("проект", "преокт")
+    if any(pw in tl for pw in project_words) and not has_create:
+        return {"type": "function", "function": {"name": "query_database"}}
+    # Если упоминают проекты + запрос (даже с create keywords типа "покажи")
     query_words = ("статус", "что в ", "какие ", "покажи", "список", "работ", "канбан",
                     "сколько", "что сейчас", "что у нас", "над чем", "в работе",
-                    "лиды", "брифинг", "постпродакшн", "производств", "препродакшн")
+                    "лиды", "брифинг", "постпродакшн", "производств", "препродакшн",
+                    "перечисли", "актуальн", "текущ", "открыт", "активн", "расскажи")
     if any(pw in tl for pw in project_words) and any(w in tl for w in query_words):
         return {"type": "function", "function": {"name": "query_database"}}
     return "auto"
