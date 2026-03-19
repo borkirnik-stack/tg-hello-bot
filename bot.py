@@ -95,6 +95,16 @@ def detect_notion_section(text: str) -> str | None:
             return page_id
     return None
 
+def _detect_tool_choice(text: str):
+    """Форсирует вызов tool если в тексте явно просят создать проект/контакт."""
+    tl = text.lower()
+    has_create = any(kw in tl for kw in CREATE_KEYWORDS)
+    if has_create and ("проект" in tl or "преокт" in tl):
+        return {"type": "function", "function": {"name": "create_project"}}
+    if has_create and ("контакт" in tl or "crm" in tl or "срм" in tl):
+        return {"type": "function", "function": {"name": "create_contact"}}
+    return "auto"
+
 conversations = {}
 _tasks_cache: list = []
 _tasks_cache_time: float = 0
@@ -608,7 +618,7 @@ async def notion_create_contact(args: dict) -> str:
 
 async def notion_create_project(args: dict) -> str:
     props = {
-        "Проекты": {"title": [{"text": {"content": args["name"]}}]},
+        "Проекты ": {"title": [{"text": {"content": args["name"]}}]},
         "Статус": {"status": {"name": args.get("status", "Лиды / брифинг")}},
     }
     if args.get("budget"):
@@ -618,7 +628,7 @@ async def notion_create_project(args: dict) -> str:
     if args.get("producer"):
         props["Продюсер"] = {"select": {"name": args["producer"]}}
     if args.get("responsible"):
-        props["Ответственный"] = {"multi_select": [{"name": r} for r in args["responsible"]]}
+        props["Ответственный "] = {"multi_select": [{"name": r} for r in args["responsible"]]}
     if args.get("start_date"):
         props["Старт работы"] = {"date": {"start": args["start_date"]}}
     if args.get("deadline"):
@@ -879,7 +889,7 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 *conversations[user_id],
             ],
             tools=TOOLS,
-            tool_choice="auto",
+            tool_choice=_detect_tool_choice(text),
         )
 
         msg = response.choices[0].message
