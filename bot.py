@@ -648,7 +648,8 @@ async def notion_create_project(args: dict) -> str:
     if resp.status_code == 200:
         page_id = resp.json().get("id", "").replace("-", "")
         return f"✅ Проект «{args['name']}» занесён в базу.\n🔗 https://notion.so/{page_id}"
-    return f"Ошибка при создании проекта: {resp.status_code} {resp.text[:200]}"
+    print(f"[CREATE_PROJECT ERROR] {resp.status_code}: {resp.text[:500]}")
+    return f"Ошибка при создании проекта: {resp.status_code} {resp.text[:300]}"
 
 
 async def run_tool(name: str, args: dict) -> str:
@@ -728,6 +729,28 @@ async def test_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             lines.append(f"Ошибка: {e}")
     await update.message.reply_text("\n".join(lines))
+
+
+async def testdb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Debug: показывает свойства базы проектов."""
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                f"https://api.notion.com/v1/databases/{PROJECTS_DB_ID}",
+                headers=NOTION_HEADERS,
+            )
+        if resp.status_code == 200:
+            data = resp.json()
+            props = data.get("properties", {})
+            lines = [f"📊 База проектов ({PROJECTS_DB_ID}):\n"]
+            for name, info in props.items():
+                ptype = info.get("type", "?")
+                lines.append(f"• {name} [{ptype}]")
+            await update.message.reply_text("\n".join(lines))
+        else:
+            await update.message.reply_text(f"Ошибка: {resp.status_code}\n{resp.text[:300]}")
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка: {e}")
 
 
 async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -914,6 +937,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("chatid", chatid_cmd))
     app.add_handler(CommandHandler("test", test_notion))
+    app.add_handler(CommandHandler("testdb", testdb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
     app.add_handler(MessageHandler(filters.PHOTO, chat))
 
