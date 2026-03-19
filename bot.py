@@ -1122,6 +1122,13 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text if update.message.text else ""
     chat_type = update.effective_chat.type  # "private", "group", "supergroup"
 
+    # Стикеры — превращаем в текстовое описание
+    sticker = update.message.sticker
+    if sticker and not text:
+        text = f"[Стикер: {sticker.emoji or ''}]"
+        if sticker.set_name:
+            text += f" (набор: {sticker.set_name})"
+
     # Голосовые сообщения — транскрибируем через Whisper
     voice = update.message.voice or update.message.audio
     if voice and not text:
@@ -1372,6 +1379,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
     app.add_handler(MessageHandler(filters.PHOTO, chat))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, chat))
+    app.add_handler(MessageHandler(filters.Sticker.ALL, chat))
 
     # Запускаем веб-сервер в отдельном потоке
     port = int(os.environ.get("PORT", 8080))
