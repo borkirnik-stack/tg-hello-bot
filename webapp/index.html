@@ -242,7 +242,7 @@
     <div class="avatar">👤</div>
 
     <div class="greeting">добро пожаловать</div>
-    <div class="name">Кирилл</div>
+    <div class="name" id="userName">Привет</div>
     <div class="tagline">
       Твой персональный ассистент.<br>
       <span>Notion. Задачи. ИИ.</span>
@@ -318,6 +318,10 @@
       tg.expand();
       tg.setHeaderColor('#0f0f0f');
       tg.setBackgroundColor('#0f0f0f');
+      const user = tg.initDataUnsafe?.user;
+      if (user) {
+        document.getElementById('userName').textContent = user.first_name || 'Привет';
+      }
     }
 
   </script>
