@@ -45,6 +45,7 @@ async def neurolina_chat(request: Request):
 openai_client = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
 NOTION_TOKEN = os.environ["NOTION_TOKEN"]
 NOTION_DB_ID = "8c5db127-9158-4804-a355-302ba8da33f2"
+PROJECTS_DB_ID = "f76d34df-10da-433d-ab12-68b9d8624d07"
 NOTION_USER_ID = "6a8b00b8-c9e8-41c3-bcca-9ba4e2223ee9"
 NOTION_HEADERS = {
     "Authorization": f"Bearer {NOTION_TOKEN}",
@@ -169,6 +170,28 @@ TOOLS = [
                     "page_id": {"type": "string", "description": "ID страницы Notion (из URL или из результатов поиска)"},
                 },
                 "required": ["page_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_project",
+            "description": "Занести новый проект в базу данных Проекты KINEMOTOR. Использовать когда пользователь говорит 'занеси проект', 'добавь проект', 'новый проект'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Название проекта"},
+                    "status": {"type": "string", "description": "Статус: 'Лиды / брифинг', 'Взято в работу / Концепция / Поиск интеграции', 'Производство' и др. По умолчанию — 'Лиды / брифинг'"},
+                    "budget": {"type": "number", "description": "Бюджет проекта в рублях (если известен)"},
+                    "source": {"type": "string", "description": "Откуда проект: 'От кирилла', 'Коммерция первичный', 'Коммерция повторка', 'Ньюбиз первичный' и др."},
+                    "producer": {"type": "string", "description": "Продюсер: 'Забирова', 'Зотов', 'Борисов', 'Капитонов' и др."},
+                    "responsible": {"type": "array", "items": {"type": "string"}, "description": "Ответственные сотрудники"},
+                    "start_date": {"type": "string", "description": "Дата старта работы в формате YYYY-MM-DD"},
+                    "deadline": {"type": "string", "description": "Дедлайн подачи в формате YYYY-MM-DD"},
+                    "notes": {"type": "string", "description": "Доп. информация по проекту"},
+                },
+                "required": ["name"],
             },
         },
     },
@@ -431,6 +454,38 @@ async def notion_get_page_content(page_id: str) -> str:
     return content if content else "Страница пустая."
 
 
+async def notion_create_project(args: dict) -> str:
+    props = {
+        "Проекты": {"title": [{"text": {"content": args["name"]}}]},
+        "Статус": {"status": {"name": args.get("status", "Лиды / брифинг")}},
+    }
+    if args.get("budget"):
+        props["Бюджет проекта"] = {"number": args["budget"]}
+    if args.get("source"):
+        props["Откуда проект"] = {"select": {"name": args["source"]}}
+    if args.get("producer"):
+        props["Продюсер"] = {"select": {"name": args["producer"]}}
+    if args.get("responsible"):
+        props["Ответственный"] = {"multi_select": [{"name": r} for r in args["responsible"]]}
+    if args.get("start_date"):
+        props["Старт работы"] = {"date": {"start": args["start_date"]}}
+    if args.get("deadline"):
+        props["Дедлайн подачи"] = {"date": {"start": args["deadline"]}}
+    if args.get("notes"):
+        props["Доп. информация // От тендеровика"] = {"rich_text": [{"text": {"content": args["notes"]}}]}
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            "https://api.notion.com/v1/pages",
+            headers=NOTION_HEADERS,
+            json={"parent": {"database_id": PROJECTS_DB_ID}, "properties": props},
+        )
+    if resp.status_code == 200:
+        page_id = resp.json().get("id", "").replace("-", "")
+        return f"✅ Проект «{args['name']}» занесён в базу.\n🔗 https://notion.so/{page_id}"
+    return f"Ошибка при создании проекта: {resp.status_code} {resp.text[:200]}"
+
+
 async def run_tool(name: str, args: dict) -> str:
     if name == "find_task":
         tasks = await notion_get_tasks()
@@ -463,6 +518,8 @@ async def run_tool(name: str, args: dict) -> str:
         return await notion_list_databases()
     elif name == "get_page_content":
         return await notion_get_page_content(args["page_id"])
+    elif name == "create_project":
+        return await notion_create_project(args)
     return "Неизвестная функция."
 
 
@@ -519,7 +576,9 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "Ты полезный ассистент. Отвечай на русском языке. Помни весь контекст разговора. "
                     "У тебя есть полный доступ к Notion пользователя: читать задачи, добавлять, менять статус, "
                     "искать любые страницы и базы данных, читать содержимое страниц. "
-                    "Если пользователь спрашивает про Notion, его страницы, заметки, базы — используй соответствующие функции."
+                    "Если пользователь спрашивает про Notion, его страницы, заметки, базы — используй соответствующие функции. "
+                    "Если пользователь говорит 'занеси проект', 'добавь проект', 'новый проект' — используй create_project. "
+                    "Спроси только то чего точно нет в сообщении (минимум вопросов). Название обязательно, остальное опционально."
                 )},
                 *conversations[user_id],
             ],
