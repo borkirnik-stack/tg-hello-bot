@@ -95,16 +95,27 @@ _tasks_cache: list = []
 _tasks_cache_time: float = 0
 CACHE_TTL = 60  # секунд
 
-# Доступ: список разрешённых user_id. Первый — админ.
-_allowed_raw = os.environ.get("ALLOWED_USERS", "")
-ALLOWED_USERS: set[int] = set(int(x.strip()) for x in _allowed_raw.split(",") if x.strip())
-ADMIN_ID = int(_allowed_raw.split(",")[0].strip()) if ALLOWED_USERS else None
+# Доступ: проверяем членство в командном чате
+TEAM_CHAT_ID = os.environ.get("TEAM_CHAT_ID", "")  # ID чата команды
+_members_cache: dict[int, float] = {}  # user_id → timestamp последней проверки
+_MEMBER_CACHE_TTL = 300  # 5 минут
 
-def is_allowed(user_id: int) -> bool:
-    """Если ALLOWED_USERS не задан — пускаем всех. Иначе только из списка."""
-    if not ALLOWED_USERS:
+async def is_allowed(user_id: int, bot) -> bool:
+    """Если TEAM_CHAT_ID не задан — пускаем всех. Иначе проверяем членство в чате."""
+    if not TEAM_CHAT_ID:
         return True
-    return user_id in ALLOWED_USERS
+    # Кеш чтобы не дёргать API каждое сообщение
+    now = time.time()
+    if user_id in _members_cache and now - _members_cache[user_id] < _MEMBER_CACHE_TTL:
+        return True
+    try:
+        member = await bot.get_chat_member(chat_id=int(TEAM_CHAT_ID), user_id=user_id)
+        if member.status in ("creator", "administrator", "member"):
+            _members_cache[user_id] = now
+            return True
+    except Exception:
+        pass
+    return False
 
 def build_main_menu() -> ReplyKeyboardMarkup:
     webapp_url = os.environ.get("WEBAPP_URL", "")
@@ -679,8 +690,8 @@ BOT_VERSION = "v8"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    if not is_allowed(user_id):
-        await update.message.reply_text(f"⛔ Нет доступа.\nТвой ID: {user_id}\nПопроси админа добавить тебя.")
+    if not await is_allowed(user_id, context.bot):
+        await update.message.reply_text("⛔ Нет доступа. Бот доступен только для команды.")
         return
     conversations[user_id] = []
     await update.message.reply_text(
@@ -688,22 +699,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Например: «занеси задачу купить молоко» или «покажи мои задачи»",
         reply_markup=MAIN_MENU,
     )
-
-async def allow_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Админ-команда: /allow <user_id> — добавить пользователя."""
-    user_id = update.effective_user.id
-    if ADMIN_ID and user_id != ADMIN_ID:
-        await update.message.reply_text("⛔ Только админ может добавлять пользователей.")
-        return
-    if not context.args:
-        await update.message.reply_text(f"Использование: /allow <user_id>\n\nТекущий список: {ALLOWED_USERS or 'все'}")
-        return
-    try:
-        new_id = int(context.args[0])
-        ALLOWED_USERS.add(new_id)
-        await update.message.reply_text(f"✅ Пользователь {new_id} добавлен.\nВсего: {len(ALLOWED_USERS)}")
-    except ValueError:
-        await update.message.reply_text("ID должен быть числом.")
 
 async def test_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Debug: тестирует подключение к Notion."""
@@ -730,7 +725,7 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_type = update.effective_chat.type  # "private", "group", "supergroup"
 
     # Проверка доступа
-    if not is_allowed(user_id):
+    if not await is_allowed(user_id, context.bot):
         return  # молча игнорируем неавторизованных
 
     # В группах отвечаем только если упомянули бота или ответили на его сообщение
@@ -921,7 +916,6 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("test", test_notion))
-    app.add_handler(CommandHandler("allow", allow_user))
     app.add_handler(add_task_conv)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
     app.add_handler(MessageHandler(filters.PHOTO, chat))
