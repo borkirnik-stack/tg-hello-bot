@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from openai import AsyncOpenAI
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
 web_app = FastAPI()
 web_app.mount("/static", StaticFiles(directory="webapp"), name="static")
@@ -90,7 +90,6 @@ def detect_notion_section(text: str) -> str | None:
     return None
 
 conversations = {}
-WAITING_TASK = 1
 _tasks_cache: list = []
 _tasks_cache_time: float = 0
 CACHE_TTL = 60  # секунд
@@ -120,7 +119,6 @@ async def is_allowed(user_id: int, bot) -> bool:
 def build_main_menu() -> ReplyKeyboardMarkup:
     webapp_url = os.environ.get("WEBAPP_URL", "")
     rows = [
-        [KeyboardButton("📋 Мои задачи"), KeyboardButton("➕ Добавить задачу")],
         [KeyboardButton("🔄 Сбросить чат")],
     ]
     if webapp_url:
@@ -686,7 +684,14 @@ async def run_tool(name: str, args: dict) -> str:
     return "Неизвестная функция."
 
 
-BOT_VERSION = "v8"
+BOT_VERSION = "v9"
+
+
+async def chatid_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показывает ID текущего чата."""
+    chat = update.effective_chat
+    await update.message.reply_text(f"Chat ID: `{chat.id}`\nType: {chat.type}", parse_mode="Markdown")
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -746,14 +751,7 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id not in conversations:
         conversations[user_id] = []
 
-    if text == "📋 Мои задачи":
-        await update.message.chat.send_action("typing")
-        tasks = await notion_get_tasks()
-        result = "\n".join(f"• {t['title']}" + (f" [{t['status']}]" if t["status"] else "") for t in tasks) if tasks else "Задач не найдено."
-        await update.message.reply_text(f"📋 Твои задачи:\n\n{result}", reply_markup=MAIN_MENU)
-        return
-
-    if text == "🔄 Сбросить чат":
+if text == "🔄 Сбросить чат":
         conversations[user_id] = []
         await update.message.reply_text("История очищена.", reply_markup=MAIN_MENU)
         return
@@ -876,25 +874,6 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"Ошибка: {str(e)[:300]}")
 
 
-async def add_task_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Напиши задачу, которую добавить в Notion:")
-    return WAITING_TASK
-
-
-async def add_task_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    title = update.message.text.strip()
-    ok = await notion_add_task(title)
-    if ok:
-        await update.message.reply_text(f"✅ Задача добавлена: {title}", reply_markup=MAIN_MENU)
-    else:
-        await update.message.reply_text("Ошибка при добавлении.", reply_markup=MAIN_MENU)
-    return ConversationHandler.END
-
-
-async def add_task_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Отмена.", reply_markup=MAIN_MENU)
-    return ConversationHandler.END
-
 
 async def preload_cache(app):
     print("Preloading Notion tasks cache...")
@@ -906,17 +885,9 @@ def main():
     token = os.environ["BOT_TOKEN"]
     app = ApplicationBuilder().token(token).post_init(preload_cache).build()
 
-    add_task_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^➕ Добавить задачу$"), add_task_start)],
-        states={
-            WAITING_TASK: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_task_save)],
-        },
-        fallbacks=[CommandHandler("cancel", add_task_cancel)],
-    )
-
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("chatid", chatid_cmd))
     app.add_handler(CommandHandler("test", test_notion))
-    app.add_handler(add_task_conv)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
     app.add_handler(MessageHandler(filters.PHOTO, chat))
 
