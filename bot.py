@@ -742,17 +742,18 @@ async def test_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def testdb(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Debug: показывает свойства базы проектов."""
+    """Debug: показывает свойства базы данных. /testdb [db_id]"""
+    db_id = context.args[0] if context.args else PROJECTS_DB_ID
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(
-                f"https://api.notion.com/v1/databases/{PROJECTS_DB_ID}",
+                f"https://api.notion.com/v1/databases/{db_id}",
                 headers=NOTION_HEADERS,
             )
         if resp.status_code == 200:
             data = resp.json()
             props = data.get("properties", {})
-            lines = [f"📊 База проектов ({PROJECTS_DB_ID}):\n"]
+            lines = [f"📊 База ({db_id}):\n"]
             for name, info in props.items():
                 ptype = info.get("type", "?")
                 lines.append(f"• {name} [{ptype}]")
