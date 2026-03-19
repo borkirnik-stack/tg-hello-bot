@@ -5,7 +5,7 @@ import time
 import threading
 import httpx
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from openai import AsyncOpenAI
@@ -18,6 +18,29 @@ web_app.mount("/static", StaticFiles(directory="webapp"), name="static")
 @web_app.get("/")
 async def serve_index():
     return FileResponse("webapp/index.html")
+
+@web_app.get("/chat")
+async def serve_chat():
+    return FileResponse("webapp/chat.html")
+
+@web_app.post("/api/neurolina")
+async def neurolina_chat(request: Request):
+    body = await request.json()
+    messages = body.get("messages", [])
+    system = (
+        "Ты Нейролина — умная, дружелюбная и немного ироничная девушка-ассистент "
+        "видеопродакшн студии KINEMOTOR PRODUCTION (Москва). "
+        "Помогаешь клиентам и команде: брифование, стоимость съёмок, этапы производства, "
+        "рекламные ролики, корпоративные фильмы, music video, моушн-графика. "
+        "Студия: kinemotor.pro · почта: go@kinemotor.pro · бриф: kinemotor.pro/brief/. "
+        "Отвечай коротко, живо и по делу. Всегда на русском. "
+        "Если не знаешь точную цену — предложи заполнить бриф."
+    )
+    response = await openai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "system", "content": system}, *messages],
+    )
+    return {"reply": response.choices[0].message.content}
 
 openai_client = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
 NOTION_TOKEN = os.environ["NOTION_TOKEN"]
