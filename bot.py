@@ -10,6 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from openai import AsyncOpenAI
+import telegram.error
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -1140,13 +1141,15 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🟩🩵🔷⬛",
             "🟩🩵⬛⬛",
         ]
-        i = 0
+        i = 1
         while _anim_running:
-            await asyncio.sleep(0.4)
+            await asyncio.sleep(0.35)
             if not _anim_running:
                 break
             try:
                 await thinking_msg.edit_text(frames[i % len(frames)])
+            except telegram.error.BadRequest:
+                pass
             except Exception:
                 break
             i += 1
