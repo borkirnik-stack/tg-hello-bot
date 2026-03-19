@@ -869,20 +869,12 @@ async def notion_query_database(args: dict) -> str:
     db_id = db_map.get(raw_db, PROJECTS_DB_ID)
     print(f"[QUERY_DB] raw={args.get('database')}, normalized={raw_db}, db_id={db_id}")
     is_projects = (db_id == PROJECTS_DB_ID)
-    body = {"page_size": 50}
+    body = {"page_size": 100}
+    # Фильтрация — без фильтра если что-то пойдёт не так (fallback в retry ниже)
     filter_status = args.get("filter_status")
     if filter_status:
         body["filter"] = {"property": "Статус", "status": {"equals": filter_status}}
-    elif is_projects:
-        # По умолчанию показываем только активные проекты (не закрытые/отменённые)
-        body["filter"] = {
-            "and": [
-                {"property": "Статус", "status": {"does_not_equal": "Закрыто 2023"}},
-                {"property": "Статус", "status": {"does_not_equal": "Закрыто 2024"}},
-                {"property": "Статус", "status": {"does_not_equal": "Закрыто 2025"}},
-                {"property": "Статус", "status": {"does_not_equal": "Отменено"}},
-            ]
-        }
+    # Не ставим жёсткий фильтр для projects — отфильтруем в Python после получения
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
@@ -891,7 +883,20 @@ async def notion_query_database(args: dict) -> str:
             json=body,
         )
     if resp.status_code != 200:
-        return f"Ошибка при запросе базы: {resp.status_code} {resp.text[:200]}"
+        print(f"[QUERY_DB ERROR] {resp.status_code}: {resp.text[:500]}")
+        # Фильтр не сработал — пробуем без фильтра
+        if "filter" in body:
+            print("[QUERY_DB] Retrying without filter...")
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    f"https://api.notion.com/v1/databases/{db_id}/query",
+                    headers=NOTION_HEADERS,
+                    json={"page_size": 100},
+                )
+            if resp.status_code != 200:
+                return f"Ошибка при запросе базы: {resp.status_code} {resp.text[:200]}"
+        else:
+            return f"Ошибка при запросе базы: {resp.status_code} {resp.text[:200]}"
     data = resp.json()
     results = data.get("results", [])
     if not results:
@@ -921,6 +926,7 @@ async def notion_query_database(args: dict) -> str:
 
     # Группируем по статусу для проектов
     if is_projects:
+        CLOSED_STATUSES = {"Закрыто 2023", "Закрыто 2024", "Закрыто 2025", "Отменено"}
         by_status = {}
         for r in results:
             props = r.get("properties", {})
@@ -934,6 +940,9 @@ async def notion_query_database(args: dict) -> str:
             if not title:
                 continue
             status = _extract_prop(props, "Статус") or "Без статуса"
+            # Пропускаем закрытые/отменённые
+            if not filter_status and status in CLOSED_STATUSES:
+                continue
             budget = _extract_prop(props, "Бюджет проекта")
             producer = _extract_prop(props, "Продюсер")
             responsible = _extract_prop(props, "Ответственный ")
