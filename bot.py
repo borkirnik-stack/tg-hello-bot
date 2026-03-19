@@ -1207,8 +1207,10 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 elif fwd_type == 'hidden_user' and hasattr(fwd, 'sender_user_name'):
                     text += f"\n[Переслано от: {fwd.sender_user_name}]"
             # Авто-подгрузка Notion раздела если упоминается в сообщении
+            # НЕ подгружаем если _detect_tool_choice форсит инструмент (query_database и др.)
             user_msg = text
-            section_id = detect_notion_section(text) if text else None
+            forced_tool = _detect_tool_choice(text) if text else "auto"
+            section_id = detect_notion_section(text) if (text and forced_tool == "auto") else None
             if section_id:
                 try:
                     notion_data = await notion_get_page_content(section_id)
@@ -1257,6 +1259,9 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "ТЫ ОБЯЗАН вызвать create_contractor. Подрядчики — это ОТДЕЛЬНАЯ база от CRM/контактов!\n"
                     "Если пользователь говорит 'занеси', 'добавь' + 'портфолио' — "
                     "ТЫ ОБЯЗАН вызвать create_portfolio.\n"
+                    "Если пользователь спрашивает 'что в проектах', 'покажи проекты', 'над чем работаем', "
+                    "'какие проекты', 'статус проектов' — ТЫ ОБЯЗАН вызвать query_database с database='projects'. "
+                    "НИКОГДА не отвечай 'перейдите по ссылке' или 'не могу получить данные' — вызови query_database!\n"
                     "НИКОГДА не отвечай 'не могу создать' — у тебя ЕСТЬ инструменты для этого!\n"
                     "Бери данные из ВСЕЙ истории переписки, не спрашивай то что уже есть в сообщениях.\n\n"
                     "При создании контактов: ВНИМАТЕЛЬНО смотри на скриншот/изображение и извлекай ВСЕ данные: "
