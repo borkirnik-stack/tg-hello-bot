@@ -596,7 +596,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def test_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Debug: тестирует подключение к Notion."""
-    lines = [f"🔧 Bot {BOT_VERSION}\n"]
+    token_preview = f"{NOTION_TOKEN[:8]}...{NOTION_TOKEN[-4:]}"
+    lines = [f"🔧 Bot {BOT_VERSION}\nToken: {token_preview}\n"]
     # Тест detect_notion_section
     test_text = " ".join(context.args) if context.args else "crm"
     section_id = detect_notion_section(test_text)
