@@ -239,7 +239,7 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "name": {"type": "string", "description": "Полное имя и фамилия контакта"},
+                    "name": {"type": "string", "description": "Имя и фамилия контакта НА РУССКОМ ЯЗЫКЕ. Если имя на латинице (Vasilisa Usoltseva) — транслитерируй на русский (Василиса Усольцева). Формат: Имя Фамилия."},
                     "company": {"type": "string", "description": "Компания"},
                     "position": {"type": "string", "description": "Должность"},
                     "telegram": {"type": "string", "description": "Телеграм (@username)"},
