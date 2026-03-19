@@ -493,12 +493,12 @@ async def notion_search(query: str) -> str:
                 title_obj = r.get("title", [])
                 title = title_obj[0].get("plain_text", "Без названия").strip() if title_obj else "Без названия"
             page_id = r["id"].replace("-", "")
-            lines.append(f"📄 {title}\n   🔗 https://notion.so/{page_id}")
+            lines.append(f'📄 <a href="https://notion.so/{page_id}">{title}</a>')
         elif obj_type == "database":
             title_arr = r.get("title", [])
             title = title_arr[0].get("plain_text", "Без названия").strip() if title_arr else "Без названия"
             db_id = r["id"].replace("-", "")
-            lines.append(f"🗃 {title} (база данных)\n   🔗 https://notion.so/{db_id}")
+            lines.append(f'🗃 <a href="https://notion.so/{db_id}">{title}</a> (база данных)')
     return "\n\n".join(lines)
 
 
@@ -692,7 +692,7 @@ async def notion_create_contact(args: dict) -> str:
         )
     if resp.status_code == 200:
         page_id = resp.json().get("id", "").replace("-", "")
-        return f"✅ Контакт «{args['name']}» добавлен в CRM.\n🔗 https://notion.so/{page_id}"
+        return f'✅ Контакт «{args["name"]}» добавлен в CRM.\n🔗 <a href="https://notion.so/{page_id}">Открыть в Notion</a>'
     return f"Ошибка при создании контакта: {resp.status_code} {resp.text[:200]}"
 
 
@@ -737,7 +737,7 @@ async def notion_create_project(args: dict) -> str:
         )
     if resp.status_code == 200:
         page_id = resp.json().get("id", "").replace("-", "")
-        return f"✅ Проект «{args['name']}» занесён в базу.\n🔗 https://notion.so/{page_id}"
+        return f'✅ Проект «{args["name"]}» занесён в базу.\n🔗 <a href="https://notion.so/{page_id}">Открыть в Notion</a>'
     print(f"[CREATE_PROJECT ERROR] {resp.status_code}: {resp.text[:500]}")
     return f"Ошибка при создании проекта: {resp.status_code} {resp.text[:300]}"
 
@@ -790,7 +790,7 @@ async def notion_create_contractor(args: dict) -> str:
         )
     if resp.status_code == 200:
         page_id = resp.json().get("id", "").replace("-", "")
-        return f"✅ Подрядчик «{args['name']}» добавлен в базу.\n🔗 https://notion.so/{page_id}"
+        return f'✅ Подрядчик «{args["name"]}» добавлен в базу.\n🔗 <a href="https://notion.so/{page_id}">Открыть в Notion</a>'
     print(f"[CREATE_CONTRACTOR ERROR] {resp.status_code}: {resp.text[:500]}")
     return f"Ошибка при создании подрядчика: {resp.status_code} {resp.text[:300]}"
 
@@ -841,7 +841,7 @@ async def notion_create_portfolio(args: dict) -> str:
         )
     if resp.status_code == 200:
         page_id = resp.json().get("id", "").replace("-", "")
-        return f"✅ Работа «{args['name']}» добавлена в портфолио.\n🔗 https://notion.so/{page_id}"
+        return f'✅ Работа «{args["name"]}» добавлена в портфолио.\n🔗 <a href="https://notion.so/{page_id}">Открыть в Notion</a>'
     print(f"[CREATE_PORTFOLIO ERROR] {resp.status_code}: {resp.text[:500]}")
     return f"Ошибка при добавлении в портфолио: {resp.status_code} {resp.text[:300]}"
 
@@ -947,7 +947,8 @@ async def notion_query_database(args: dict) -> str:
             producer = _extract_prop(props, "Продюсер")
             responsible = _extract_prop(props, "Ответственный ")
             page_id = r["id"].replace("-", "")
-            entry = f"  • {title}"
+            link = f"https://notion.so/{page_id}"
+            entry = f'  • <a href="{link}">{title}</a>'
             details = []
             if budget and budget != "0":
                 details.append(f"{int(float(budget)):,}₽".replace(",", " "))
@@ -1002,7 +1003,8 @@ async def notion_query_database(args: dict) -> str:
                 elif sp.get("type") == "select" and sp.get("select"):
                     status = sp["select"].get("name", "")
             page_id = r["id"].replace("-", "")
-            line = f"• {title}"
+            link = f"https://notion.so/{page_id}"
+            line = f'• <a href="{link}">{title}</a>'
             if status:
                 line += f" [{status}]"
             lines.append(line)
@@ -1016,18 +1018,17 @@ async def run_tool(name: str, args: dict) -> str:
         matched = [t for t in tasks if query in t["title"].lower()]
         if not matched:
             return f"Задача '{args['title']}' не найдена в Notion."
-        lines = [f"• {t['title']}" + (f" [{t['status']}]" if t["status"] else "") + f"\n  🔗 https://notion.so/{t['id'].replace('-', '')}" for t in matched]
+        lines = [f'• <a href="https://notion.so/{t["id"].replace("-", "")}">{t["title"]}</a>' + (f" [{t['status']}]" if t["status"] else "") for t in matched]
         return "\n".join(lines)
     if name == "get_tasks":
         tasks = await notion_get_tasks()
         if not tasks:
             return "Задач не найдено."
-        # Показываем только активные задачи (со статусом), либо последние 30
         active = [t for t in tasks if t["status"] and t["status"] not in ("Отмена",)]
         show = active[:30] if active else tasks[:30]
         db_url = f"https://notion.so/{NOTION_DB_ID.replace('-', '')}"
-        lines = [f"• {t['title']}" + (f" [{t['status']}]" if t["status"] else "") for t in show]
-        return "\n".join(lines) + f"\n\nВсего задач: {len(tasks)}\n📂 {db_url}"
+        lines = [f'• <a href="https://notion.so/{t["id"].replace("-", "")}">{t["title"]}</a>' + (f" [{t['status']}]" if t["status"] else "") for t in show]
+        return "\n".join(lines) + f'\n\nВсего задач: {len(tasks)}\n📂 <a href="{db_url}">Открыть базу</a>'
     elif name == "add_task":
         url = await notion_add_task(args["title"])
         return f"Задача '{args['title']}' добавлена в Notion.\n🔗 {url}" if url else "Ошибка при добавлении задачи."
@@ -1347,7 +1348,15 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         _anim_running = False
         anim_task.cancel()
-        await thinking_msg.edit_text(reply)
+        # Отправляем с HTML если есть ссылки, иначе plain text
+        if "<a href=" in reply:
+            try:
+                await thinking_msg.edit_text(reply, parse_mode="HTML", disable_web_page_preview=True)
+            except Exception:
+                # Fallback если HTML невалидный
+                await thinking_msg.edit_text(reply)
+        else:
+            await thinking_msg.edit_text(reply)
 
     except Exception as e:
         _anim_running = False
