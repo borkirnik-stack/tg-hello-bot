@@ -751,7 +751,7 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id not in conversations:
         conversations[user_id] = []
 
-if text == "🔄 Сбросить чат":
+    if text == "🔄 Сбросить чат":
         conversations[user_id] = []
         await update.message.reply_text("История очищена.", reply_markup=MAIN_MENU)
         return
