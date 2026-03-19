@@ -847,10 +847,21 @@ async def notion_query_database(args: dict) -> str:
         "portfolio": PORTFOLIO_DB_ID,
     }
     db_id = db_map.get(args.get("database", ""), PROJECTS_DB_ID)
-    body = {"page_size": 30}
+    is_projects = (db_id == PROJECTS_DB_ID)
+    body = {"page_size": 50}
     filter_status = args.get("filter_status")
     if filter_status:
         body["filter"] = {"property": "Статус", "status": {"equals": filter_status}}
+    elif is_projects:
+        # По умолчанию показываем только активные проекты (не закрытые/отменённые)
+        body["filter"] = {
+            "and": [
+                {"property": "Статус", "status": {"does_not_equal": "Закрыто 2023"}},
+                {"property": "Статус", "status": {"does_not_equal": "Закрыто 2024"}},
+                {"property": "Статус", "status": {"does_not_equal": "Закрыто 2025"}},
+                {"property": "Статус", "status": {"does_not_equal": "Отменено"}},
+            ]
+        }
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
@@ -864,34 +875,108 @@ async def notion_query_database(args: dict) -> str:
     results = data.get("results", [])
     if not results:
         return "Записей не найдено."
-    lines = []
-    for r in results:
-        props = r.get("properties", {})
-        # Извлекаем title
-        title = ""
-        for val in props.values():
-            if val.get("type") == "title":
-                arr = val.get("title", [])
-                title = arr[0].get("plain_text", "").strip() if arr else ""
-                break
-        if not title:
-            continue
-        # Статус
-        status = ""
-        for key in ("Статус", "Status"):
-            sp = props.get(key, {})
-            if sp.get("type") == "status" and sp.get("status"):
-                status = sp["status"].get("name", "")
-            elif sp.get("type") == "select" and sp.get("select"):
-                status = sp["select"].get("name", "")
-        page_id = r["id"].replace("-", "")
-        line = f"• {title}"
-        if status:
-            line += f" [{status}]"
-        line += f"\n  🔗 https://notion.so/{page_id}"
-        lines.append(line)
-    total = data.get("total", len(results))
-    return "\n".join(lines) + f"\n\nПоказано: {len(lines)}"
+
+    def _extract_prop(props, key, ptype=None):
+        p = props.get(key, {})
+        t = p.get("type", "")
+        if t == "title":
+            arr = p.get("title", [])
+            return arr[0].get("plain_text", "").strip() if arr else ""
+        if t == "rich_text":
+            arr = p.get("rich_text", [])
+            return arr[0].get("plain_text", "").strip() if arr else ""
+        if t == "status" and p.get("status"):
+            return p["status"].get("name", "")
+        if t == "select" and p.get("select"):
+            return p["select"].get("name", "")
+        if t == "multi_select":
+            return ", ".join(o.get("name", "") for o in p.get("multi_select", []))
+        if t == "number":
+            v = p.get("number")
+            return str(int(v)) if v else ""
+        if t == "date" and p.get("date"):
+            return p["date"].get("start", "")
+        return ""
+
+    # Группируем по статусу для проектов
+    if is_projects:
+        by_status = {}
+        for r in results:
+            props = r.get("properties", {})
+            title = _extract_prop(props, "Проекты ")
+            if not title:
+                for val in props.values():
+                    if val.get("type") == "title":
+                        arr = val.get("title", [])
+                        title = arr[0].get("plain_text", "").strip() if arr else ""
+                        break
+            if not title:
+                continue
+            status = _extract_prop(props, "Статус") or "Без статуса"
+            budget = _extract_prop(props, "Бюджет проекта")
+            producer = _extract_prop(props, "Продюсер")
+            responsible = _extract_prop(props, "Ответственный ")
+            page_id = r["id"].replace("-", "")
+            entry = f"  • {title}"
+            details = []
+            if budget and budget != "0":
+                details.append(f"{int(float(budget)):,}₽".replace(",", " "))
+            if producer:
+                details.append(producer)
+            if details:
+                entry += f" ({', '.join(details)})"
+            if status not in by_status:
+                by_status[status] = []
+            by_status[status].append(entry)
+
+        # Порядок статусов как на канбане
+        status_order = [
+            "Лиды / брифинг", "Дебрифинг / подготовка к смете",
+            "Взято в работу / Концепция / Поиск интеграции",
+            "Переторжка", "Ждём",
+            "Запуск / Препродакшн", "Аккредитация",
+            "Производство", "Постпродакшн",
+        ]
+        lines = []
+        shown_statuses = set()
+        for s in status_order:
+            if s in by_status:
+                lines.append(f"\n🔹 {s} ({len(by_status[s])}):")
+                lines.extend(by_status[s])
+                shown_statuses.add(s)
+        # Остальные статусы
+        for s, entries in by_status.items():
+            if s not in shown_statuses:
+                lines.append(f"\n🔹 {s} ({len(entries)}):")
+                lines.extend(entries)
+        total_active = sum(len(v) for v in by_status.values())
+        return "\n".join(lines) + f"\n\nВсего активных: {total_active}"
+    else:
+        # Для остальных баз — простой список
+        lines = []
+        for r in results:
+            props = r.get("properties", {})
+            title = ""
+            for val in props.values():
+                if val.get("type") == "title":
+                    arr = val.get("title", [])
+                    title = arr[0].get("plain_text", "").strip() if arr else ""
+                    break
+            if not title:
+                continue
+            status = ""
+            for key in ("Статус", "Status"):
+                sp = props.get(key, {})
+                if sp.get("type") == "status" and sp.get("status"):
+                    status = sp["status"].get("name", "")
+                elif sp.get("type") == "select" and sp.get("select"):
+                    status = sp["select"].get("name", "")
+            page_id = r["id"].replace("-", "")
+            line = f"• {title}"
+            if status:
+                line += f" [{status}]"
+            lines.append(line)
+        return "\n".join(lines) + f"\n\nПоказано: {len(lines)}"
 
 
 async def run_tool(name: str, args: dict) -> str:
@@ -939,7 +1024,7 @@ async def run_tool(name: str, args: dict) -> str:
     return "Неизвестная функция."
 
 
-BOT_VERSION = "v10"
+BOT_VERSION = "v11"
 
 
 async def chatid_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
