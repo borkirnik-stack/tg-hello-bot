@@ -628,12 +628,15 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conversations[user_id].append({"role": "user", "content": content})
         else:
             # Авто-подгрузка Notion раздела если упоминается в сообщении
+            user_msg = text
             section_id = detect_notion_section(text) if text else None
             if section_id:
-                notion_data = await notion_get_page_content(section_id)
-                user_msg = f"{text}\n\n📋 [Данные из Notion]\n{notion_data}"
-            else:
-                user_msg = text
+                try:
+                    notion_data = await notion_get_page_content(section_id)
+                    if notion_data and not notion_data.startswith("Ошибка") and notion_data != "Страница пустая.":
+                        user_msg = f"{text}\n\n📋 [Данные из Notion]\n{notion_data}"
+                except Exception:
+                    pass
             conversations[user_id].append({"role": "user", "content": user_msg})
 
         response = await openai_client.chat.completions.create(
