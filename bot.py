@@ -111,16 +111,12 @@ def _detect_tool_choice(text: str):
         return {"type": "function", "function": {"name": "create_project"}}
     if has_create and ("контакт" in tl or "crm" in tl or "срм" in tl):
         return {"type": "function", "function": {"name": "create_contact"}}
-    # Если упоминают проекты БЕЗ создания — всегда query_database
+    # Если упоминают проекты — форсим query_database
+    # НО: "не в проектах" / "не проекты" = пользователь НЕ хочет проекты
     project_words = ("проект", "преокт")
-    if any(pw in tl for pw in project_words) and not has_create:
-        return {"type": "function", "function": {"name": "query_database"}}
-    # Если упоминают проекты + запрос (даже с create keywords типа "покажи")
-    query_words = ("статус", "что в ", "какие ", "покажи", "список", "работ", "канбан",
-                    "сколько", "что сейчас", "что у нас", "над чем", "в работе",
-                    "лиды", "брифинг", "постпродакшн", "производств", "препродакшн",
-                    "перечисли", "актуальн", "текущ", "открыт", "активн", "расскажи")
-    if any(pw in tl for pw in project_words) and any(w in tl for w in query_words):
+    has_project = any(pw in tl for pw in project_words)
+    negated_project = any(neg in tl for neg in ("не в проект", "не проект", "а не проект", "кроме проект"))
+    if has_project and not has_create and not negated_project:
         return {"type": "function", "function": {"name": "query_database"}}
     return "auto"
 
