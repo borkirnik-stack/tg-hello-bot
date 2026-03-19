@@ -2,10 +2,22 @@ import os
 import base64
 import json
 import time
+import threading
 import httpx
+import uvicorn
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from openai import AsyncOpenAI
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
+
+web_app = FastAPI()
+web_app.mount("/static", StaticFiles(directory="webapp"), name="static")
+
+@web_app.get("/")
+async def serve_index():
+    return FileResponse("webapp/index.html")
 
 openai_client = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
 NOTION_TOKEN = os.environ["NOTION_TOKEN"]
@@ -428,11 +440,19 @@ async def run_tool(name: str, args: dict) -> str:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     conversations[user_id] = []
+    webapp_url = os.environ.get("WEBAPP_URL", "")
+    inline_kb = None
+    if webapp_url:
+        inline_kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✦ Открыть приложение", web_app=WebAppInfo(url=webapp_url))
+        ]])
     await update.message.reply_text(
         "Привет! Я умный бот. Просто пиши что нужно — я сам разберусь.\n\n"
         "Например: «занеси задачу купить молоко» или «покажи мои задачи»",
         reply_markup=MAIN_MENU,
     )
+    if inline_kb:
+        await update.message.reply_text("👇", reply_markup=inline_kb)
 
 
 async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -569,6 +589,15 @@ def main():
     app.add_handler(add_task_conv)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
     app.add_handler(MessageHandler(filters.PHOTO, chat))
+
+    # Запускаем веб-сервер в отдельном потоке
+    port = int(os.environ.get("PORT", 8080))
+    web_thread = threading.Thread(
+        target=lambda: uvicorn.run(web_app, host="0.0.0.0", port=port, log_level="warning"),
+        daemon=True,
+    )
+    web_thread.start()
+    print(f"Web server started on port {port}")
 
     print("Bot is running...")
     app.run_polling()

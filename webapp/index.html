@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Кирилл</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--tg-theme-bg-color, #0f0f0f);
+      color: var(--tg-theme-text-color, #fff);
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .bg-glow {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(80px);
+      opacity: 0.15;
+      pointer-events: none;
+    }
+    .glow-1 {
+      width: 400px; height: 400px;
+      background: #7c5cfc;
+      top: -100px; right: -100px;
+      animation: float1 8s ease-in-out infinite;
+    }
+    .glow-2 {
+      width: 300px; height: 300px;
+      background: #fc5c7d;
+      bottom: -80px; left: -80px;
+      animation: float2 10s ease-in-out infinite;
+    }
+    .glow-3 {
+      width: 200px; height: 200px;
+      background: #43e97b;
+      bottom: 40%; right: 10%;
+      animation: float3 12s ease-in-out infinite;
+    }
+
+    @keyframes float1 {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      50% { transform: translate(-30px, 30px) scale(1.1); }
+    }
+    @keyframes float2 {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      50% { transform: translate(20px, -20px) scale(1.05); }
+    }
+    @keyframes float3 {
+      0%, 100% { transform: translate(0, 0); }
+      50% { transform: translate(-15px, 15px); }
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+      padding: 40px 32px;
+      max-width: 380px;
+      width: 100%;
+    }
+
+    .avatar {
+      width: 88px; height: 88px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #7c5cfc, #fc5c7d);
+      margin: 0 auto 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 36px;
+      animation: pulse 3s ease-in-out infinite;
+      box-shadow: 0 0 40px rgba(124, 92, 252, 0.4);
+    }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 40px rgba(124, 92, 252, 0.4); }
+      50% { box-shadow: 0 0 60px rgba(124, 92, 252, 0.7); }
+    }
+
+    .greeting {
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.4);
+      margin-bottom: 8px;
+      animation: fadeUp 0.8s ease both;
+    }
+
+    .name {
+      font-size: 42px;
+      font-weight: 700;
+      letter-spacing: -1px;
+      line-height: 1;
+      margin-bottom: 16px;
+      background: linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.6) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: fadeUp 0.8s 0.1s ease both;
+    }
+
+    .tagline {
+      font-size: 16px;
+      color: rgba(255,255,255,0.5);
+      line-height: 1.5;
+      margin-bottom: 40px;
+      animation: fadeUp 0.8s 0.2s ease both;
+    }
+    .tagline span {
+      color: rgba(255,255,255,0.9);
+    }
+
+    .cards {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 32px;
+      animation: fadeUp 0.8s 0.3s ease both;
+    }
+
+    .card {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-decoration: none;
+      color: inherit;
+    }
+    .card:active {
+      transform: scale(0.97);
+      background: rgba(255,255,255,0.1);
+    }
+
+    .card-icon {
+      font-size: 24px;
+      width: 44px; height: 44px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .card-text { text-align: left; }
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.95);
+    }
+    .card-sub {
+      font-size: 12px;
+      color: rgba(255,255,255,0.4);
+      margin-top: 2px;
+    }
+
+    .card-arrow {
+      margin-left: auto;
+      color: rgba(255,255,255,0.2);
+      font-size: 18px;
+    }
+
+    .footer {
+      font-size: 12px;
+      color: rgba(255,255,255,0.2);
+      animation: fadeUp 0.8s 0.5s ease both;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-glow glow-1"></div>
+  <div class="bg-glow glow-2"></div>
+  <div class="bg-glow glow-3"></div>
+
+  <div class="container">
+    <div class="avatar">👤</div>
+
+    <div class="greeting">добро пожаловать</div>
+    <div class="name">Кирилл</div>
+    <div class="tagline">
+      Твой персональный ассистент.<br>
+      <span>Notion. Задачи. ИИ.</span>
+    </div>
+
+    <div class="cards">
+      <a class="card" href="https://notion.so" target="_blank">
+        <div class="card-icon">📋</div>
+        <div class="card-text">
+          <div class="card-title">Задачи личные</div>
+          <div class="card-sub">Открыть в Notion</div>
+        </div>
+        <div class="card-arrow">›</div>
+      </a>
+
+      <a class="card" href="https://notion.so/superkirill/12fd095a75324c1e86aee09e3cb56949" target="_blank">
+        <div class="card-icon">📝</div>
+        <div class="card-text">
+          <div class="card-title">Заметки</div>
+          <div class="card-sub">Открыть в Notion</div>
+        </div>
+        <div class="card-arrow">›</div>
+      </a>
+
+      <div class="card" id="close-btn">
+        <div class="card-icon">💬</div>
+        <div class="card-text">
+          <div class="card-title">Вернуться к боту</div>
+          <div class="card-sub">Продолжить разговор</div>
+        </div>
+        <div class="card-arrow">›</div>
+      </div>
+    </div>
+
+    <div class="footer">made with ✦ claude</div>
+  </div>
+
+  <script>
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.expand();
+      tg.setHeaderColor('#0f0f0f');
+      tg.setBackgroundColor('#0f0f0f');
+    }
+
+    document.getElementById('close-btn').addEventListener('click', () => {
+      if (tg) tg.close();
+    });
+  </script>
+</body>
+</html>
