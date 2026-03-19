@@ -35,11 +35,17 @@ _tasks_cache: list = []
 _tasks_cache_time: float = 0
 CACHE_TTL = 60  # секунд
 
-MAIN_MENU = ReplyKeyboardMarkup(
-    [[KeyboardButton("📋 Мои задачи"), KeyboardButton("➕ Добавить задачу")],
-     [KeyboardButton("🔄 Сбросить чат")]],
-    resize_keyboard=True,
-)
+def build_main_menu() -> ReplyKeyboardMarkup:
+    webapp_url = os.environ.get("WEBAPP_URL", "")
+    rows = [
+        [KeyboardButton("📋 Мои задачи"), KeyboardButton("➕ Добавить задачу")],
+        [KeyboardButton("🔄 Сбросить чат")],
+    ]
+    if webapp_url:
+        rows.append([KeyboardButton("✦ Открыть приложение", web_app=WebAppInfo(url=webapp_url))])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
+
+MAIN_MENU = build_main_menu()
 
 TOOLS = [
     {
@@ -440,19 +446,11 @@ async def run_tool(name: str, args: dict) -> str:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     conversations[user_id] = []
-    webapp_url = os.environ.get("WEBAPP_URL", "")
-    inline_kb = None
-    if webapp_url:
-        inline_kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("✦ Открыть приложение", web_app=WebAppInfo(url=webapp_url))
-        ]])
     await update.message.reply_text(
         "Привет! Я умный бот. Просто пиши что нужно — я сам разберусь.\n\n"
         "Например: «занеси задачу купить молоко» или «покажи мои задачи»",
         reply_markup=MAIN_MENU,
     )
-    if inline_kb:
-        await update.message.reply_text("👇", reply_markup=inline_kb)
 
 
 async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
