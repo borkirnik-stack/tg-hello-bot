@@ -583,14 +583,33 @@ async def run_tool(name: str, args: dict) -> str:
     return "Неизвестная функция."
 
 
+BOT_VERSION = "v7"
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     conversations[user_id] = []
     await update.message.reply_text(
-        "Привет! Я умный бот. Просто пиши что нужно — я сам разберусь.\n\n"
+        f"Привет! Я умный бот ({BOT_VERSION}). Просто пиши что нужно — я сам разберусь.\n\n"
         "Например: «занеси задачу купить молоко» или «покажи мои задачи»",
         reply_markup=MAIN_MENU,
     )
+
+async def test_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Debug: тестирует подключение к Notion."""
+    lines = [f"🔧 Bot {BOT_VERSION}\n"]
+    # Тест detect_notion_section
+    test_text = " ".join(context.args) if context.args else "crm"
+    section_id = detect_notion_section(test_text)
+    lines.append(f"Текст: {test_text!r}")
+    lines.append(f"Секция: {section_id or 'не найдена'}")
+    if section_id:
+        try:
+            data = await notion_get_page_content(section_id)
+            lines.append(f"Данные ({len(data)} символов):")
+            lines.append(data[:500])
+        except Exception as e:
+            lines.append(f"Ошибка: {e}")
+    await update.message.reply_text("\n".join(lines))
 
 
 async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -756,6 +775,7 @@ def main():
     )
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("test", test_notion))
     app.add_handler(add_task_conv)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
     app.add_handler(MessageHandler(filters.PHOTO, chat))
