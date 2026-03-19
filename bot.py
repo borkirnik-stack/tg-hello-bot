@@ -60,24 +60,21 @@ NOTION_SECTIONS = {
     "ньюбиз": "c09cbafe-666f-4986-b052-d97aae4cb60a",
     "продакшн": "9cecff83-7e49-4f54-a5eb-0b3ca89766b5",
     "production": "9cecff83-7e49-4f54-a5eb-0b3ca89766b5",
-    "финансы": "057ba715-c30b-4fa3-b375-a5b9935f2f4f",
-    "финанс": "057ba715-c30b-4fa3-b375-a5b9935f2f4f",
+    "финанс": "057ba715-c30b-4fa3-b375-a5b9935f2f4f",  # финансы/финансах/финансов
     "hr": "cbde043e-2aad-4e20-a7ac-9b0e3f16a6b1",
-    "управление": "0c13ad32-6d3e-46be-83b4-fd22a5b63a27",
+    "управлени": "0c13ad32-6d3e-46be-83b4-fd22a5b63a27",  # управление/управлении
     "crm": "71a73c06-4a49-451d-abca-fe3e34078227",
     "срм": "71a73c06-4a49-451d-abca-fe3e34078227",
-    "crma": "71a73c06-4a49-451d-abca-fe3e34078227",
-    "проекты км": "4dd52333-9829-4f10-8fb4-14d49e644005",
-    "проекты": "4dd52333-9829-4f10-8fb4-14d49e644005",
-    "задачи": "d9014f76-e13d-4a0c-9958-f5dc3d11405f",
-    "оплаты": "75a22cfb-9371-4e38-9896-5003d6b69a1b",
-    "поступления": "f503e4b8-1489-422e-972a-353d331b3917",
-    "траты": "f503e4b8-1489-422e-972a-353d331b3917",
-    "портфолио": "186bf5c1-9108-80d0-bc66-ff069000926e",
-    "база знаний": "9c33eadf-421b-46a8-9528-76d50b0cc182",
-    "знания": "9c33eadf-421b-46a8-9528-76d50b0cc182",
-    "оргсхема": "36809ee1-9d98-4d3e-a9ed-f30d0c1b1dec",
-    "стратегия": "996deae7-9b3f-4645-842a-2a6ade9e60fb",
+    "проект": "4dd52333-9829-4f10-8fb4-14d49e644005",   # проекты/проектах/проекта
+    "задач": "d9014f76-e13d-4a0c-9958-f5dc3d11405f",    # задачи/задачах/задач
+    "оплат": "75a22cfb-9371-4e38-9896-5003d6b69a1b",    # оплаты/оплатах
+    "поступлени": "f503e4b8-1489-422e-972a-353d331b3917",
+    "трат": "f503e4b8-1489-422e-972a-353d331b3917",
+    "портфоли": "186bf5c1-9108-80d0-bc66-ff069000926e", # портфолио/портфолиo
+    "баз": "9c33eadf-421b-46a8-9528-76d50b0cc182",      # база/базе/базу знаний
+    "знани": "9c33eadf-421b-46a8-9528-76d50b0cc182",    # знания/знаниях/знаний
+    "оргсхем": "36809ee1-9d98-4d3e-a9ed-f30d0c1b1dec",
+    "стратеги": "996deae7-9b3f-4645-842a-2a6ade9e60fb", # стратегия/стратегии
     "pr": "246bf5c1-9108-8065-9926-d0a0ae7a870f",
     "пиар": "246bf5c1-9108-8065-9926-d0a0ae7a870f",
     "архив": "63900bcf-e088-4a28-9f92-fea1437e5819",
@@ -638,14 +635,14 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
             conversations[user_id].append({"role": "user", "content": content})
         else:
-            conversations[user_id].append({"role": "user", "content": text})
-
-        # Авто-подгрузка Notion раздела если упоминается в сообщении
-        section_id = detect_notion_section(text) if text else None
-        extra_context = ""
-        if section_id:
-            notion_data = await notion_get_page_content(section_id)
-            extra_context = f"\n\n[Данные из Notion по запросу пользователя]\n{notion_data}"
+            # Авто-подгрузка Notion раздела если упоминается в сообщении
+            section_id = detect_notion_section(text) if text else None
+            if section_id:
+                notion_data = await notion_get_page_content(section_id)
+                user_msg = f"{text}\n\n📋 [Данные из Notion]\n{notion_data}"
+            else:
+                user_msg = text
+            conversations[user_id].append({"role": "user", "content": user_msg})
 
         response = await openai_client.chat.completions.create(
             model="gpt-4o",
@@ -677,7 +674,7 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "ТЫ ОБЯЗАН вызвать get_page_content с ID из списка выше. НИКОГДА не отвечай по памяти. "
                     "Если пользователь говорит 'занеси проект', 'добавь проект', 'новый проект' — используй create_project. "
                     "Спроси только то чего точно нет в сообщении (минимум вопросов). Название обязательно, остальное опционально."
-                ) + extra_context},
+                )},
                 *conversations[user_id],
             ],
             tools=TOOLS,
