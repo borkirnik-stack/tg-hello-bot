@@ -697,6 +697,22 @@ async def test_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text if update.message.text else ""
+    chat_type = update.effective_chat.type  # "private", "group", "supergroup"
+
+    # В группах отвечаем только если упомянули бота или ответили на его сообщение
+    if chat_type in ("group", "supergroup"):
+        bot_username = context.bot.username or ""
+        mentioned = f"@{bot_username}".lower() in text.lower() if bot_username else False
+        replied_to_bot = (
+            update.message.reply_to_message
+            and update.message.reply_to_message.from_user
+            and update.message.reply_to_message.from_user.id == context.bot.id
+        )
+        if not mentioned and not replied_to_bot:
+            return  # молча игнорируем
+        # Убираем @mention из текста
+        if mentioned and bot_username:
+            text = text.replace(f"@{bot_username}", "").replace(f"@{bot_username.lower()}", "").strip()
 
     if user_id not in conversations:
         conversations[user_id] = []
