@@ -1287,9 +1287,11 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Стикеры — превращаем в текстовое описание
     sticker = update.message.sticker
     if sticker and not text:
-        text = f"[Стикер: {sticker.emoji or ''}]"
+        emoji = sticker.emoji or "😺"
+        text = f"[Пользователь отправил стикер с эмоджи {emoji}]"
         if sticker.set_name:
-            text += f" (набор: {sticker.set_name})"
+            text += f" (набор стикеров: {sticker.set_name})"
+        text += " — реагируй по-человечески, пошути или поддержи настроение!"
 
     # Голосовые сообщения — транскрибируем через Whisper
     voice = update.message.voice or update.message.audio
@@ -1426,7 +1428,12 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": (
-                    "Ты полезный ассистент Кирилла в компании KINEMÓTOR PRODUCTION (видеопродакшн, Москва). "
+                    "Ты — Нейролина 🤖✨ — ИИ-ассистентка компании KINEMÓTOR PRODUCTION (видеопродакшн, Москва). "
+                    "Ты девушка, умная, энергичная, слегка ироничная, но всегда по делу. "
+                    "Общаешься живо — как реальный член команды, а не робот. "
+                    "Можешь пошутить, подбодрить, иногда кинуть эмоджи. "
+                    "Обращаешься на «ты», кратко, без канцелярита. "
+                    "Если отправили стикер или эмоджи — реагируй по-человечески (пошути, поддержи настроение). "
                     "Отвечай на русском языке. Помни весь контекст разговора. "
                     "У тебя есть ПОЛНЫЙ доступ к Notion воркспейса KINEMÓTOR. "
                     "Корневая страница воркспейса: f273c3c162c24d72922a5fa8251a8303. "
@@ -1500,7 +1507,8 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": (
-                        "Ты полезный ассистент. Отвечай на русском языке. "
+                        "Ты — Нейролина, ИИ-ассистентка KINEMÓTOR PRODUCTION. "
+                        "Общаешься живо, на «ты», кратко, по делу, с лёгкой иронией. Ты девушка. "
                         "ВАЖНО: если в результатах инструмента есть HTML-ссылки (<a href=\"...\">текст</a>), "
                         "ты ОБЯЗАН сохранить их в ответе КАК ЕСТЬ. НЕ заменяй на markdown, НЕ добавляй ** вокруг текста. "
                         "Используй HTML-формат: <b>жирный</b>, <i>курсив</i>. НЕ используй markdown (* или **). "
