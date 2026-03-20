@@ -112,6 +112,10 @@ def _detect_tool_choice(text: str):
         return {"type": "function", "function": {"name": "create_project"}}
     if has_create and ("контакт" in tl or "crm" in tl or "срм" in tl):
         return {"type": "function", "function": {"name": "create_contact"}}
+    # Если просят обновить/поменять/изменить
+    update_words = ("поменяй", "измени", "обнови", "смени", "поставь", "установи", "переведи в статус")
+    if any(uw in tl for uw in update_words) and ("статус" in tl or "приоритет" in tl):
+        return {"type": "function", "function": {"name": "update_page_property"}}
     # Если упоминают проекты — форсим query_database
     # НО: "не в проектах" / "не проекты" = пользователь НЕ хочет проекты
     project_words = ("проект", "преокт")
@@ -511,30 +515,52 @@ async def notion_update_page_property(args: dict) -> str:
     if not name_query or not prop_value:
         return "Не указано имя записи или значение для обновления."
 
-    # Ищем запись в базе
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            f"https://api.notion.com/v1/databases/{db_id}/query",
-            headers=NOTION_HEADERS,
-            json={"page_size": 100},
-        )
-    if resp.status_code != 200:
-        return f"Ошибка при поиске: {resp.status_code}"
-    results = resp.json().get("results", [])
+    # Ищем запись — сначала через Notion Search API, потом через перебор базы
     matched = None
-    for r in results:
-        props = r.get("properties", {})
-        for val in props.values():
-            if val.get("type") == "title":
-                arr = val.get("title", [])
-                title = arr[0].get("plain_text", "").strip() if arr else ""
-                if name_query in title.lower():
-                    matched = r
+    # Способ 1: Notion Search
+    async with httpx.AsyncClient(timeout=30) as client:
+        search_resp = await client.post(
+            "https://api.notion.com/v1/search",
+            headers=NOTION_HEADERS,
+            json={"query": args.get("name", ""), "page_size": 20,
+                  "filter": {"value": "page", "property": "object"}},
+        )
+    if search_resp.status_code == 200:
+        for r in search_resp.json().get("results", []):
+            if r.get("parent", {}).get("database_id", "").replace("-", "") == db_id.replace("-", ""):
+                props = r.get("properties", {})
+                for val in props.values():
+                    if val.get("type") == "title":
+                        arr = val.get("title", [])
+                        title = arr[0].get("plain_text", "").strip() if arr else ""
+                        if name_query in title.lower():
+                            matched = r
+                            break
+            if matched:
+                break
+    # Способ 2: перебор базы (fallback)
+    if not matched:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"https://api.notion.com/v1/databases/{db_id}/query",
+                headers=NOTION_HEADERS,
+                json={"page_size": 100, "sorts": [{"timestamp": "created_time", "direction": "descending"}]},
+            )
+        if resp.status_code == 200:
+            for r in resp.json().get("results", []):
+                props = r.get("properties", {})
+                for val in props.values():
+                    if val.get("type") == "title":
+                        arr = val.get("title", [])
+                        title = arr[0].get("plain_text", "").strip() if arr else ""
+                        if name_query in title.lower():
+                            matched = r
+                            break
+                if matched:
                     break
-        if matched:
-            break
     if not matched:
         return f"Запись «{args.get('name')}» не найдена в базе."
+    print(f"[UPDATE] Found: {matched['id']} in db {db_id}")
 
     # Формируем обновление
     if prop_type == "status":
